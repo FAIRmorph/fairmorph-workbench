@@ -1,6 +1,6 @@
 <div align="center">
 
-# FAIRmorph App
+# FAIRmorph Workbench
 
 **Local-First Desktop Workbench for FAIR & Reproducible Ecological Data Curation**
 
@@ -15,7 +15,7 @@
 
 ## 📌 Overview
 
-**FAIRmorph App** is the cross-platform desktop user interface and process orchestrator for the **FAIRmorph** ecosystem. Built on **Tauri v2** and **Rust**, it provides a local-first, visual workbench designed for marine biologists, ecologists, and research data managers to curate heterogeneous observation, sampling, and media data into standardized, FAIR-compliant scientific packages without writing code.
+**FAIRmorph Workbench** is the cross-platform desktop user interface and process orchestrator for the **FAIRmorph** ecosystem. Built on **Tauri v2** and **Rust**, it provides a local-first, visual workbench designed for marine biologists, ecologists, and research data managers to curate heterogeneous observation, sampling, and media data into standardized, FAIR-compliant scientific packages without writing code.
 
 The application serves as a non-invasive bridge between raw field assets (CSVs, Excel files, image folders) and global biodiversity publishing endpoints (**OBIS**, **GBIF**, and institutional repositories).
 
@@ -42,4 +42,4 @@ The application serves as a non-invasive bridge between raw field assets (CSVs, 
 
 ## 🏗️ Architecture
 
-`fairmorph-app` acts as the user-facing shell and runtime supervisor. It manages native window lifecycles, file pickers, and OS integrations while orchestrating the underlying execution engine (`fairfield-engine`).
+`fairmorph-workbench` acts as the user-facing shell and runtime supervisor. It manages native window lifecycles, file pickers, and OS integrations while orchestrating the underlying execution engine (`fairfield-engine`).

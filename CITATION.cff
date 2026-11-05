@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata from this file."
+type: software
+title: "FAIRmorph Workbench"
+abstract: "Offline-first desktop application for biodiversity data curation, EML 2.2.0 metadata editing, deterministic auditing, and Darwin Core / GeoPackage packaging orchestration."
+version: 0.1.0
+date-released: "2026-11-03"
+license: MIT
+repository-code: "https://github.com/fairmorph/fairmorph-workbench"
+url: "https://www.fairmorph.org"
+authors:
+  - name: "FAIRmorph Team"
+    email: "contact@fairmorph.org"
+    website: "https://www.fairmorph.org"
+keywords:
+  - biodiversity-data
+  - data-curation
+  - tauri-v2
+  - sveltekit
+  - svelte-5
+  - darwin-core
+  - eml-metadata
+  - geopackage
+  - offline-first

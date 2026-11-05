@@ -1,0 +1,50 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "FAIRmorph Workbench",
+  "version": "../package.json",
+  "identifier": "org.fairmorph.workbench",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm test:all && pnpm build",
+    "frontendDist": "../build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "FAIRmorph Workbench",
+        "width": 1000,
+        "height": 700
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": [
+      "engine/**/*"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "publisher": "FAIRmorph Team <contact@fairmorph.org>",
+    "copyright": "Copyright © 2026 FAIRmorph Team",
+    "license": "MIT",
+    "shortDescription": "Offline-first desktop application for biodiversity data curation",
+    "longDescription": "Offline-first desktop application for biodiversity data curation, EML 2.2.0 metadata editing, deterministic auditing, and Darwin Core / GeoPackage packaging orchestration.",
+    "category": "Science",
+    "homepage": "https://www.fairmorph.org"
+  }
+}
