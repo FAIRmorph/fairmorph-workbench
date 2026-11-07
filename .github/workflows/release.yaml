@@ -83,7 +83,7 @@ jobs:
           pytest ./fairmorph-engine/tests
 
       - name: Configure Python for Rust integration test
-        run: python -c "import os,sys;open(os.environ['GITHUB_ENV'],'a').write('FAIRMORPH_ENGINE_PYTHON='+sys.executable+'\\n')"
+        run: python -c "import os,sys;open(os.environ['GITHUB_ENV'],'a').write('FAIRMORPH_ENGINE_PYTHON='+sys.executable+'\n')"
 
       - name: Install Node Dependencies & Typecheck
         working-directory: fairmorph-workbench
