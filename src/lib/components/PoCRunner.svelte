@@ -1,77 +1,90 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { parseEngineEvent, type EngineResultData } from '$lib/engine-protocol';
 
-  // Typdefinitionen für das Python-Protokoll
-  interface ProgressPayload {
-    event: 'progress';
-    stage: string;
-    percentage: number;
-    message: string;
-  }
-
-  interface ResultPayload {
-    event: 'result';
-    status: string;
-    data: {
-      processed_records: number;
-      engine_python_version: string;
-      dataset_sha256: string;
-      completed_at: string;
-      loaded_file: string;
-    };
-  }
-
-  type EngineEvent = ProgressPayload | ResultPayload;
-
-  // Svelte 5 Runes State (für Svelte 4: einfach "let records = 1000;" etc. nutzen)
   let records = $state(1000);
+  let listenerReady = $state(false);
   let isRunning = $state(false);
   let currentStage = $state('');
   let currentMessage = $state('');
   let progressPercent = $state(0);
-  let resultData = $state<ResultPayload['data'] | null>(null);
+  let resultData = $state<EngineResultData | null>(null);
   let errorMessage = $state<string | null>(null);
 
-  let unlisten: UnlistenFn | null = null;
+  let pendingResult: EngineResultData | null = null;
+  let receivedError = false;
 
-  onMount(async () => {
-    // Registriere Event-Listener für stdout-Events aus Rust
-    unlisten = await listen<string>('poc-event', (event) => {
+  onMount(() => {
+    let disposed = false;
+    let unlisten: UnlistenFn | undefined;
+
+    listen<string>('poc-event', ({ payload }) => {
+      if (!isRunning) return;
       try {
-        const payload: EngineEvent = JSON.parse(event.payload);
-
-        if (payload.event === 'progress') {
-          currentStage = payload.stage;
-          progressPercent = payload.percentage;
-          currentMessage = payload.message;
-        } else if (payload.event === 'result') {
-          progressPercent = 100;
-          resultData = payload.data;
-          isRunning = false;
+        const event = parseEngineEvent(payload);
+        if (event.event === 'progress') {
+          currentStage = event.stage;
+          progressPercent = event.percentage;
+          currentMessage = event.message;
+        } else if (event.status === 'success') {
+          pendingResult = event.data;
+          currentMessage = 'Engine-Ergebnis empfangen';
+        } else {
+          errorMessage = event.message;
+          receivedError = true;
         }
-      } catch (err) {
-        console.error('Failed to parse NDJSON payload:', event.payload, err);
+      } catch {
+        errorMessage = 'Ungültiges Ereignis von der Engine empfangen.';
+        receivedError = true;
       }
+    }).then((stop) => {
+      if (disposed) stop();
+      else {
+        unlisten = stop;
+        listenerReady = true;
+      }
+    }).catch((error) => {
+      if (!disposed) errorMessage = 'Engine-Eventlistener konnte nicht gestartet werden: ' + String(error);
     });
-  });
 
-  onDestroy(() => {
-    if (unlisten) unlisten();
+    return () => {
+      disposed = true;
+      listenerReady = false;
+      unlisten?.();
+    };
   });
 
   async function startBenchmark() {
+    if (!listenerReady || isRunning) return;
+    if (!Number.isSafeInteger(records) || records < 10 || records > 1_000_000) {
+      errorMessage = 'Bitte eine ganze Datensatzanzahl zwischen 10 und 1.000.000 eingeben.';
+      return;
+    }
+
     isRunning = true;
     errorMessage = null;
     resultData = null;
+    pendingResult = null;
+    receivedError = false;
+    currentStage = 'STARTING';
     progressPercent = 0;
-    currentMessage = 'Starte Prozess...';
+    currentMessage = 'Starte Engine-Prozess …';
 
     try {
       await invoke('run_poc', { records });
-    } catch (err) {
-      errorMessage = String(err);
+      if (!receivedError && pendingResult) {
+        resultData = pendingResult;
+        progressPercent = 100;
+        currentStage = 'COMPLETED';
+        currentMessage = 'Engine erfolgreich abgeschlossen';
+      } else if (!errorMessage) {
+        errorMessage = 'Engine beendet, aber kein gültiges Ergebnis empfangen.';
+      }
+    } catch (error) {
+      if (!errorMessage) errorMessage = 'Engine-Aufruf fehlgeschlagen: ' + String(error);
+    } finally {
       isRunning = false;
     }
   }
@@ -90,17 +103,17 @@
       type="number"
       min="10"
       max="1000000"
-      step="100"
+      step="1"
       bind:value={records}
       disabled={isRunning}
     />
-    <button onclick={startBenchmark} disabled={isRunning}>
+    <button onclick={startBenchmark} disabled={isRunning || !listenerReady}>
       {isRunning ? 'Läuft...' : 'Benchmark starten'}
     </button>
   </div>
 
   {#if isRunning || progressPercent > 0}
-    <div class="progress-section">
+    <div class="progress-section" aria-live="polite">
       <div class="progress-labels">
         <span class="stage-badge">{currentStage || 'PENDING'}</span>
         <span class="percent">{progressPercent.toFixed(0)}%</span>
@@ -113,15 +126,15 @@
   {/if}
 
   {#if errorMessage}
-    <div class="error-box">
+    <div class="error-box" role="alert">
       <strong>Fehler beim IPC-Aufruf:</strong>
       <pre>{errorMessage}</pre>
     </div>
   {/if}
 
   {#if resultData}
-    <div class="result-box">
-      <h3>Ergebnis der Transformation</h3>
+    <div class="result-box" aria-live="polite">
+      <h3>Ergebnis des Engine-PoC</h3>
       <table>
         <tbody>
           <tr>
