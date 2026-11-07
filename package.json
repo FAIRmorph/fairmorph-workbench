@@ -4,6 +4,7 @@
   "identifier": "org.fairmorph.workbench",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Offline-first desktop application for biodiversity data curation, EML 2.2.0 metadata editing, deterministic auditing, and Darwin Core / GeoPackage packaging orchestration.",
   "shortDescription": "Offline-first desktop application for biodiversity data curation",
   "author": {
