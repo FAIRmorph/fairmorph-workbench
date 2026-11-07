@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: FAIRmorph/fairmorph-engine
-          ref: main
+          ref: choire/setup # Temporary until engine PoC is merged into main
           path: fairmorph-engine
       - uses: actions/setup-python@v5
         with:
@@ -29,10 +29,11 @@ jobs:
           node-version: '22'
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
-      - name: Linux Tauri test dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Install and cache Linux Tauri test dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          version: 1.0
       - name: Install engine for integration tests
         run: python -m pip install -e ./fairmorph-engine
       - name: Configure Python for Rust integration test
