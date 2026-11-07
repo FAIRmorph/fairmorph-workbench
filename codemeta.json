@@ -1,0 +1,46 @@
+{
+  "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+  "@type": "SoftwareSourceCode",
+  "identifier": "org.fairmorph.workbench",
+  "name": "FAIRmorph Workbench",
+  "version": "0.1.0",
+  "description": "Offline-first desktop application for biodiversity data curation, EML 2.2.0 metadata editing, deterministic auditing, and Darwin Core / GeoPackage packaging orchestration.",
+  "private": true,
+  "license": "https://spdx.org/licenses/MIT",
+  "codeRepository": "https://github.com/fairmorph/fairmorph-workbench",
+  "issueTracker": "https://github.com/fairmorph/fairmorph-workbench/issues",
+  "url": "https://www.fairmorph.org",
+  "author": [
+    {
+      "@type": "Organization",
+      "name": "FAIRmorph Team",
+      "email": "contact@fairmorph.org",
+      "url": "https://www.fairmorph.org"
+    }
+  ],
+  "programmingLanguage": [
+    "TypeScript",
+    "Rust",
+    "Svelte"
+  ],
+  "runtimePlatform": [
+    "Tauri 2",
+    "Node.js"
+  ],
+  "operatingSystem": [
+    "Linux",
+    "Windows",
+    "macOS"
+  ],
+  "applicationCategory": "Bio-Informatics, GIS, Scientific Curation Tool",
+  "keywords": [
+    "biodiversity-data",
+    "data-curation",
+    "darwin-core",
+    "eml-metadata",
+    "geopackage",
+    "fair-data"
+  ],
+  "dateModified": "2026-11-03",
+  "documentation": "https://github.com/fairmorph/fairmorph-workbench/blob/main/READMEx.md"
+}

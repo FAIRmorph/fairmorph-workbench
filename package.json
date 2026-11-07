@@ -1,0 +1,64 @@
+{
+  "name": "fairmorph-workbench",
+  "productName": "FAIRmorph Workbench",
+  "identifier": "org.fairmorph.workbench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline-first desktop application for biodiversity data curation, EML 2.2.0 metadata editing, deterministic auditing, and Darwin Core / GeoPackage packaging orchestration.",
+  "shortDescription": "Offline-first desktop application for biodiversity data curation",
+  "author": {
+    "name": "FAIRmorph Team",
+    "email": "contact@fairmorph.org",
+    "url": "https://www.fairmorph.org"
+  },
+  "license": "MIT",
+  "homepage": "https://www.fairmorph.org",
+  "documentation": "https://github.com/fairmorph/fairmorph-workbench/blob/main/READMEx.md",
+  "bugs": {
+    "url": "https://github.com/fairmorph/fairmorph-workbench/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fairmorph/fairmorph-workbench.git"
+  },
+  "keywords": [
+    "biodiversity-data",
+    "data-curation",
+    "darwin-core",
+    "eml-metadata",
+    "geopackage",
+    "fair-data"
+  ],
+  "scripts": {
+    "dev": "vite dev",
+    "build": "pnpm sync:meta && vite build",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "prepare": "svelte-kit sync || echo ''",
+    "sync:meta": "node scripts/sync-metadata.mjs",
+    "version": "pnpm sync:meta && git add src-tauri/Cargo.toml src-tauri/tauri.conf.json CITATION.cff codemeta.json",
+    "test:frontend": "vitest run",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:all": "pnpm check && pnpm test:frontend && pnpm test:rust",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tanstack/svelte-table": "^9.3.1",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@xyflow/svelte": "^1.7.0",
+    "lucide-svelte": "^1.0.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/kit": "^2.65.1",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@tauri-apps/cli": "^2",
+    "svelte": "^5.56.3",
+    "svelte-check": "^4.6.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.16",
+    "vitest": "^5.0.5"
+  }
+}
