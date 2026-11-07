@@ -11,17 +11,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            artifact-name: linux-packages
-            bundle-path: |
-              fairmorph-workbench/src-tauri/target/release/bundle/appimage/*.AppImage
-              fairmorph-workbench/src-tauri/target/release/bundle/deb/*.deb
+          # Temporarily disabled while validating Windows-only installer and portable ZIP.
+#          - os: ubuntu-22.04
+#            target: x86_64-unknown-linux-gnu
+#            artifact-name: linux-packages
+#            bundle-path: |
+#              fairmorph-workbench/src-tauri/target/release/bundle/appimage/*.AppImage
+#              fairmorph-workbench/src-tauri/target/release/bundle/deb/*.deb
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            bundles: nsis
             artifact-name: windows-packages
             bundle-path: |
               fairmorph-workbench/src-tauri/target/release/bundle/nsis/*.exe
+              fairmorph-workbench/src-tauri/target/release/bundle/portable/*.zip
 
     runs-on: ${{ matrix.os }}
 
@@ -105,7 +108,28 @@ jobs:
 
       - name: Build Tauri Desktop App
         working-directory: fairmorph-workbench
-        run: pnpm tauri build
+        run: pnpm tauri build --bundles ${{ matrix.bundles }}
+
+      - name: Package portable Windows ZIP
+        if: runner.os == 'Windows'
+        working-directory: fairmorph-workbench
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $staging = Join-Path $env:RUNNER_TEMP 'FAIRmorph-Workbench-portable'
+          $output = 'src-tauri/target/release/bundle/portable'
+          New-Item -ItemType Directory -Force -Path $staging, $output | Out-Null
+          Copy-Item 'src-tauri/target/release/fairmorph-workbench.exe' $staging
+          Copy-Item 'src-tauri/engine' $staging -Recurse
+          $zip = Join-Path $output 'FAIRmorph-Workbench-windows-portable.zip'
+          Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip -Force
+          $verify = Join-Path $env:RUNNER_TEMP 'fairmorph-portable-verify'
+          Expand-Archive -Path $zip -DestinationPath $verify -Force
+          if (-not (Test-Path (Join-Path $verify 'fairmorph-workbench.exe'))) { throw 'Workbench executable missing from portable ZIP' }
+          $engine = Join-Path $verify 'engine/fairmorph-engine.exe'
+          if (-not (Test-Path $engine)) { throw 'Engine executable missing from portable ZIP' }
+          & $engine poc --records 2 | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Portable engine smoke test failed' }
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4

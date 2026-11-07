@@ -39,7 +39,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "publisher": "FAIRmorph Team <contact@fairmorph.org>",
+    "publisher": "FAIRmorph Team",
     "copyright": "Copyright © 2026 FAIRmorph Team",
     "license": "MIT",
     "shortDescription": "Offline-first desktop application for biodiversity data curation",
