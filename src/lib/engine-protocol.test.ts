@@ -1,41 +1,81 @@
-import { describe, it, expect } from 'vitest';
-import { z } from 'zod';
+import { describe, expect, it } from 'vitest';
+import { parseEngineEvent } from './engine-protocol';
 
-const ResultPayloadSchema = z.object({
-  event: z.literal('result'),
-  status: z.literal('success'),
-  data: z.object({
-    processed_records: z.number().int().positive(),
-    engine_python_version: z.string(),
-    dataset_sha256: z.string().length(64),
-    loaded_file: z.string()
-  })
-});
+const validResult = {
+  event: 'result',
+  status: 'success',
+  data: {
+    processed_records: 1999,
+    engine_python_version: '3.11.9',
+    dataset_sha256: 'a'.repeat(64),
+    completed_at: '2026-11-07T10:00:00+00:00',
+    loaded_file: '/opt/fairmorph/commands/poc.py'
+  }
+};
 
-describe('Engine NDJSON Protocol', () => {
-  it('validates a successful result payload schema', () => {
-    const mockJson = {
-      event: 'result',
-      status: 'success',
-      data: {
-        processed_records: 1999,
-        engine_python_version: '3.12.0',
-        dataset_sha256: 'a'.repeat(64),
-        loaded_file: 'File: /tmp/test.py'
-      }
-    };
-
-    const parsed = ResultPayloadSchema.safeParse(mockJson);
-    expect(parsed.success).toBe(true);
+describe('Engine NDJSON protocol', () => {
+  it('accepts a valid progress event', () => {
+    const event = parseEngineEvent(JSON.stringify({
+      event: 'progress',
+      stage: 'PROCESSING',
+      percentage: 50,
+      message: 'Processing records'
+    }));
+    expect(event.event).toBe('progress');
   });
 
-  it('rejects incomplete payload structures', () => {
-    const invalidJson = {
+  it('accepts a complete success result', () => {
+    const event = parseEngineEvent(JSON.stringify(validResult));
+    expect(event.event).toBe('result');
+    if (event.event === 'result' && event.status === 'success') {
+      expect(event.data.processed_records).toBe(1999);
+    }
+  });
+
+  it('accepts a failure result with a message', () => {
+    expect(parseEngineEvent(JSON.stringify({
+      event: 'result',
+      status: 'error',
+      message: 'Engine failed'
+    }))).toMatchObject({ status: 'error', message: 'Engine failed' });
+  });
+
+  it('rejects missing result fields', () => {
+    const incomplete = { ...validResult, data: { processed_records: 3 } };
+    expect(() => parseEngineEvent(JSON.stringify(incomplete))).toThrow();
+  });
+
+  it.each([-1, 101, Number.NaN, Number.POSITIVE_INFINITY])(
+    'rejects an invalid progress percentage: %s',
+    (percentage) => {
+      expect(() => parseEngineEvent(JSON.stringify({
+        event: 'progress',
+        stage: 'PROCESSING',
+        percentage,
+        message: 'Processing'
+      }))).toThrow();
+    }
+  );
+
+  it('rejects a result with a missing error message', () => {
+    expect(() => parseEngineEvent(JSON.stringify({
       event: 'result',
       status: 'error'
-    };
+    }))).toThrow();
+  });
 
-    const parsed = ResultPayloadSchema.safeParse(invalidJson);
-    expect(parsed.success).toBe(false);
+  it('rejects malformed NDJSON', () => {
+    expect(() => parseEngineEvent('{not-json')).toThrow();
+  });
+
+  it('rejects unknown event types', () => {
+    expect(() => parseEngineEvent(JSON.stringify({ event: 'unknown' }))).toThrow();
+  });
+
+  it('rejects invalid SHA-256 digests', () => {
+    expect(() => parseEngineEvent(JSON.stringify({
+      ...validResult,
+      data: { ...validResult.data, dataset_sha256: 'not-a-digest' }
+    }))).toThrow();
   });
 });

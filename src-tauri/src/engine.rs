@@ -95,19 +95,33 @@ pub async fn run_poc(app: AppHandle, records: u32) -> Result<(), String> {
         });
         let reader = BufReader::new(stdout);
 
+        let mut stream_error = None;
         for line in reader.lines() {
             match line {
-                Ok(l) if !l.trim().is_empty() => {
-                    let _ = app.emit("poc-event", l);
+                Ok(line) if !line.trim().is_empty() => {
+                    if let Err(error) = app.emit("poc-event", line) {
+                        stream_error = Some(format!("Failed to emit engine event: {error}"));
+                        break;
+                    }
                 }
-                _ => {}
+                Ok(_) => {}
+                Err(error) => {
+                    stream_error = Some(format!("Failed to read engine output: {error}"));
+                    break;
+                }
             }
         }
 
+        if stream_error.is_some() {
+            let _ = child.kill();
+        }
         let status = child.wait().map_err(|e| e.to_string())?;
         let err_msg = stderr_reader
             .join()
             .map_err(|_| "Failed to read engine stderr".to_string())?;
+        if let Some(error) = stream_error {
+            return Err(error);
+        }
         if !status.success() {
             return Err(if err_msg.is_empty() {
                 format!("Engine exited with status {}", status)
