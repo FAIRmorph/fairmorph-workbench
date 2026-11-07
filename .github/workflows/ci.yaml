@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   checks:
     name: PR checks (Linux)
@@ -29,6 +33,10 @@ jobs:
           node-version: '22'
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust dependencies and build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
       - name: Install and cache Linux Tauri test dependencies
         uses: awalsh128/cache-apt-pkgs-action@v1
         with:

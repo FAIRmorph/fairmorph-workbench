@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm test:all && pnpm build",
+    "beforeBuildCommand": "pnpm build",
     "frontendDist": "../build"
   },
   "app": {
@@ -44,7 +44,7 @@
     "license": "MIT",
     "shortDescription": "Offline-first desktop application for biodiversity data curation",
     "longDescription": "Offline-first desktop application for biodiversity data curation, EML 2.2.0 metadata editing, deterministic auditing, and Darwin Core / GeoPackage packaging orchestration.",
-    "category": "Science",
+    "category": "Productivity",
     "homepage": "https://www.fairmorph.org"
   }
 }
