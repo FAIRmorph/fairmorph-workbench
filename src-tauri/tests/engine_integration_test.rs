@@ -2,23 +2,28 @@ use std::process::Command;
 
 #[test]
 fn test_engine_cli_poc_execution() {
-    #[cfg(target_os = "windows")]
-    let py_bin = "../../fairmorph-engine/.venv/Scripts/python.exe";
-    #[cfg(not(target_os = "windows"))]
-    let py_bin = "../../fairmorph-engine/.venv/bin/python";
-
-    // Starte den Engine-Subprozess direkt aus dem Rust-Testrunner
-    let output = Command::new(py_bin)
+    let python = std::env::var("FAIRMORPH_ENGINE_PYTHON")
+        .expect("Set FAIRMORPH_ENGINE_PYTHON to the Python interpreter with fairmorph-engine installed");
+    let output = Command::new(python)
         .args(["-m", "fairmorph_engine.cli", "poc", "--records", "20"])
         .output()
-        .expect("Subprozess konnte nicht gestartet werden");
+        .expect("Could not launch engine subprocess");
 
-    assert!(output.status.success(), "Engine sollte mit Exit-Code 0 beenden");
-
+    assert!(
+        output.status.success(),
+        "Engine exited with {:?}: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    
-    // Prüfe direkt in Rust auf NDJSON-Integrität
-    assert!(stdout.contains("\"event\": \"progress\""));
-    assert!(stdout.contains("\"event\": \"result\""));
-    assert!(stdout.contains("\"status\": \"success\""));
+    let events: Vec<serde_json::Value> = stdout
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("Invalid NDJSON line"))
+        .collect();
+    assert!(events.iter().any(|event| event["event"] == "progress"));
+    assert!(events.iter().any(|event| {
+        event["event"] == "result"
+            && event["status"] == "success"
+            && event["data"]["processed_records"] == 20
+    }));
 }
