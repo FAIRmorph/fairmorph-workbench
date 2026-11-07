@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: FAIRmorph/fairmorph-engine
-          ref: choire/setup # Temporary until engine PoC is merged into main
+          ref: main
           path: fairmorph-engine
       - uses: actions/setup-python@v5
         with:
