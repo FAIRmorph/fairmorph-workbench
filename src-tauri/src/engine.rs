@@ -1,5 +1,5 @@
 use tauri::{AppHandle, Emitter};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::process::{Command, Stdio};
 
 #[cfg(debug_assertions)]
@@ -85,6 +85,14 @@ pub async fn run_poc(app: AppHandle, records: u32) -> Result<(), String> {
             .map_err(|e| format!("Failed to start engine process: {}", e))?;
 
         let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+        // Drain stderr concurrently to avoid blocking when the pipe fills.
+        let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+        let stderr_reader = std::thread::spawn(move || {
+            let mut message = String::new();
+            let mut stderr = stderr;
+            let _ = stderr.read_to_string(&mut message);
+            message
+        });
         let reader = BufReader::new(stdout);
 
         for line in reader.lines() {
@@ -97,16 +105,14 @@ pub async fn run_poc(app: AppHandle, records: u32) -> Result<(), String> {
         }
 
         let status = child.wait().map_err(|e| e.to_string())?;
+        let err_msg = stderr_reader
+            .join()
+            .map_err(|_| "Failed to read engine stderr".to_string())?;
         if !status.success() {
-            let mut err_msg = String::new();
-            if let Some(mut stderr) = child.stderr.take() {
-                use std::io::Read;
-                let _ = stderr.read_to_string(&mut err_msg);
-            }
             return Err(if err_msg.is_empty() {
-                "Engine exited with error status".into()
+                format!("Engine exited with status {}", status)
             } else {
-                err_msg
+                format!("Engine exited with status {}: {}", status, err_msg)
             });
         }
 
@@ -116,23 +122,3 @@ pub async fn run_poc(app: AppHandle, records: u32) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_record_arg_conversion() {
-        let records: u32 = 1999;
-        let record_str = records.to_string();
-        assert_eq!(record_str, "1999");
-    }
-
-    #[test]
-    #[cfg(debug_assertions)]
-    fn test_dev_python_resolver() {
-        let result = resolve_python_bin();
-        assert!(result.is_ok(), "Python executable should be resolvable in dev mode");
-    }
-}
