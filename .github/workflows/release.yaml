@@ -42,7 +42,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -83,15 +82,30 @@ jobs:
           pip install -e ./fairmorph-engine
           pytest ./fairmorph-engine/tests
 
+      - name: Configure Python for Rust integration test
+        run: python -c "import os,sys;open(os.environ['GITHUB_ENV'],'a').write('FAIRMORPH_ENGINE_PYTHON='+sys.executable+'\\n')"
+
       - name: Install Node Dependencies & Typecheck
         working-directory: fairmorph-workbench
         run: |
-          pnpm install
+          pnpm install --frozen-lockfile
           pnpm check
 
       - name: Bundle Engine (PyInstaller)
         working-directory: fairmorph-workbench
         run: python scripts/bundle_engine.py
+
+      - name: Smoke-test bundled engine
+        working-directory: fairmorph-workbench
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            bin="src-tauri/engine/fairmorph-engine.exe"
+          else
+            bin="src-tauri/engine/fairmorph-engine"
+          fi
+          "$bin" poc --records 2 > engine-smoke.ndjson
+          python -c "import json; assert any(json.loads(line).get('event') == 'result' for line in open('engine-smoke.ndjson'))"
 
       - name: Build Tauri Desktop App
         working-directory: fairmorph-workbench
