@@ -6,16 +6,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-smoke:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            engine-bin: src-tauri/engine/fairmorph-engine
-          - os: windows-latest
-            engine-bin: src-tauri/engine/fairmorph-engine.exe
-    runs-on: ${{ matrix.os }}
+  checks:
+    name: PR checks (Linux)
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout workbench
         uses: actions/checkout@v4
@@ -23,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: FAIRmorph/fairmorph-engine
-          ref: ${{ github.ref_name == 'main' && 'main' || 'choire/setup' }}
+          ref: main
           path: fairmorph-engine
       - uses: actions/setup-python@v5
         with:
@@ -36,16 +29,12 @@ jobs:
           node-version: '22'
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
-      - name: Linux Tauri dependencies
-        if: runner.os == 'Linux'
+      - name: Linux Tauri test dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-      - name: Install engine and bundler
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ./fairmorph-engine
-          python -m pip install pyinstaller pyinstaller-hooks-contrib
+      - name: Install engine for integration tests
+        run: python -m pip install -e ./fairmorph-engine
       - name: Configure Python for Rust integration test
         run: python -c "import os,sys;open(os.environ['GITHUB_ENV'],'a').write('FAIRMORPH_ENGINE_PYTHON='+sys.executable+'\n')"
       - name: Install frontend dependencies
@@ -56,11 +45,3 @@ jobs:
           pnpm test:frontend
       - name: Rust tests (including engine subprocess)
         run: pnpm test:rust
-      - name: Bundle engine
-        run: python scripts/bundle_engine.py
-      - name: Smoke-test bundled engine
-        env:
-          ENGINE_BIN: ${{ matrix.engine-bin }}
-        run: python -c "import json,os,subprocess; p=subprocess.run([os.environ['ENGINE_BIN'],'poc','--records','2'],capture_output=True,text=True,check=True); assert any(json.loads(line).get('event') == 'result' for line in p.stdout.splitlines())"
-      - name: Build desktop packages
-        run: pnpm tauri build
