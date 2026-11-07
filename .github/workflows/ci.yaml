@@ -1,9 +1,8 @@
 name: Workbench PoC CI
 
 on:
-  push:
-    branches: [main, choire/setup-base-system]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
