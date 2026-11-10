@@ -567,6 +567,110 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+
+    #[test]
+    fn invalid_pipeline_templates_are_rejected_without_writing_anything() {
+        use super::technical_pipeline_template;
+        let dir = std::env::temp_dir().join(format!(
+            "fairmorph-invalid-template-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let file = dir.join("template.json");
+        for invalid in [
+            "not json",
+            "[]",
+            r#"{"schema_version":"other","resources":{"events":{"format":"csv"}},"steps":[{}],"outputs":["out"]}"#,
+            r#"{"schema_version":"fairmorph.pipeline/1","resources":{},"steps":[{}],"outputs":["out"]}"#,
+            r#"{"schema_version":"fairmorph.pipeline/1","resources":{"events":{"format":"json"}},"steps":[{}],"outputs":["out"]}"#,
+            r#"{"schema_version":"fairmorph.pipeline/1","resources":{"events":{"format":"csv"}},"steps":[],"outputs":["out"]}"#,
+            r#"{"schema_version":"fairmorph.pipeline/1","resources":{"events":{"format":"csv"}},"steps":[{}],"outputs":["out"],"entities":{}}"#
+        ] {
+            std::fs::write(&file, invalid).unwrap();
+            assert!(technical_pipeline_template(&file).is_err(), "accepted {invalid}");
+        }
+        assert!(technical_pipeline_template(&dir.join("missing.json")).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn duplicate_and_incomplete_pipeline_bindings_are_rejected() {
+        let dir = std::env::temp_dir().join(format!(
+            "fairmorph-bindings-test-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let template = dir.join("pipeline.json");
+        std::fs::write(&template, serde_json::to_vec(&json!({
+            "schema_version": "fairmorph.pipeline/1",
+            "resources": {"events": {"format": "csv"}, "counts": {"format": "csv"}},
+            "steps": [{"id":"combine","operator":"table.join/1",
+                "inputs":["events","counts"],"output":"combined","parameters":{"keys":["id"],"cardinality":"m:1"}}],
+            "outputs": ["combined"]
+        })).unwrap()).unwrap();
+        let bind = |slot: &str, format: &str| PipelineBinding {
+            slot: slot.into(), resource_id: format!("resource-{slot}"), format: format.into()
+        };
+        assert!(configured_pipeline(&template, &[]).is_err());
+        assert!(configured_pipeline(&template, &[bind("events","csv")]).is_err());
+        assert!(configured_pipeline(&template,
+            &[bind("events","csv"), bind("events","csv")]).is_err());
+        assert!(configured_pipeline(&template,
+            &[bind("events","csv"), bind("missing","csv")]).is_err());
+        assert!(configured_pipeline(&template,
+            &[bind("events","csv"), bind("counts","json")]).is_err());
+        let valid = configured_pipeline(&template,
+            &[bind("events","csv"), bind("counts","parquet")]).unwrap();
+        assert_eq!(valid["resources"]["events"]["resource_id"], "resource-events");
+        assert_eq!(valid["resources"]["counts"]["format"], "parquet");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn rejects_symlink_source_and_does_not_modify_existing_project() {
+        let dir = std::env::temp_dir().join(format!(
+            "fairmorph-source-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let source = dir.join("raw.csv");
+        std::fs::write(&source, b"id,count\\n1,0\\n").unwrap();
+        let saved = std::fs::read(&source).unwrap();
+        assert_eq!(import_source_path(source.to_str().unwrap()).unwrap(), source.canonicalize().unwrap());
+        assert!(new_project_target(dir.to_str().unwrap(), "Existing").is_err());
+        assert_eq!(std::fs::read(&source).unwrap(), saved);
+        #[cfg(unix)]
+        {
+            let link = dir.join("source-link.csv");
+            std::os::unix::fs::symlink(&source, &link).unwrap();
+            assert!(import_source_path(link.to_str().unwrap()).is_err());
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn pipeline_draft_write_preserves_unrelated_immutable_configuration() {
+        let dir = std::env::temp_dir().join(format!(
+            "fairmorph-draft-safety-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("configurations/pipelines")).unwrap();
+        let pinned = dir.join("configurations/pipelines/immutable.json");
+        std::fs::write(&pinned, "pinned").unwrap();
+        let draft = json!({"schema_version": "fairmorph.pipeline/1", "resources": {},
+            "steps": [], "outputs": []});
+        atomic_draft_write(&dir, "pipeline-technical.json", &draft).unwrap();
+        assert_eq!(std::fs::read_to_string(&pinned).unwrap(), "pinned");
+        assert_eq!(serde_json::from_slice::<serde_json::Value>(
+            &std::fs::read(dir.join("configurations/drafts/pipeline-technical.json")).unwrap()
+        ).unwrap(), draft);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn rejects_missing_project() {
         assert!(validate_project("").is_err());
