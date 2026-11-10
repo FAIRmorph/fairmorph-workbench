@@ -1,0 +1,49 @@
+name: P0.6 Workbench Windows checks
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Workbench
+        uses: actions/checkout@v4
+      - name: Checkout P0.6 Engine contract branch
+        uses: actions/checkout@v4
+        with:
+          repository: FAIRmorph/fairmorph-engine
+          ref: feature/p06-dataset-metadata-revisions
+          path: fairmorph-engine
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Engine for subprocess tests
+        shell: pwsh
+        run: |
+          python -m venv fairmorph-engine/.venv
+          fairmorph-engine/.venv/Scripts/python.exe -m pip install -e ./fairmorph-engine
+          fairmorph-engine/.venv/Scripts/python.exe -m fairmorph_engine.cli handshake
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install frontend
+        run: pnpm install --frozen-lockfile
+      - name: Check frontend and protocol tests
+        run: |
+          pnpm check
+          pnpm test:frontend
+      - name: Check Rust and Engine process integration
+        env:
+          FAIRMORPH_ENGINE_PYTHON: ${{ github.workspace }}\\fairmorph-engine\\.venv\\Scripts\\python.exe
+        run: cargo test --manifest-path src-tauri/Cargo.toml
