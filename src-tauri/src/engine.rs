@@ -189,7 +189,7 @@ fn atomic_draft_write(project: &Path, name: &str, document: &Value) -> Result<()
     if path.is_symlink() || (path.exists() && !path.is_file()) {
         return Err("Unsafe draft file".into());
     }
-    let temporary = dir.join(format!(".{name}.{}.tmp", uuid::Uuid::new_v4()));
+    let temporary = dir.join(format!(".{name}.{}.{}.tmp", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_nanos()));
     let bytes = serde_json::to_vec_pretty(document).map_err(|e| e.to_string())?;
     let result = (|| {
         use std::io::Write;
