@@ -37,3 +37,14 @@ export function pipelineBindingsComplete(
     return !!resource && (formats[input.name] === 'csv' || formats[input.name] === 'parquet');
   });
 }
+
+/** UI gate only. The Engine separately validates RUN eligibility at execution. */
+export function runButtonReady(
+  currentProject: string,
+  setupProject: string,
+  selectedPipelineSha: string
+): boolean {
+  return !!setupProject
+    && currentProject.trim() === setupProject
+    && /^[0-9a-f]{64}$/.test(selectedPipelineSha);
+}
