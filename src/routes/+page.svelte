@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { canInitializeProject, importsReady, pipelineBindingsComplete, sourceFileName, type SourceFile } from '$lib/project-setup';
+  import { canInitializeProject, importsReady, pipelineBindingsComplete, runButtonReady, sourceFileName, type SourceFile } from '$lib/project-setup';
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
   import {
@@ -22,6 +22,7 @@
   let pipelineSaved = $state(false);
   let pipelineSha = $state('');
   let selectedPipelineSha = $state('');
+  let canRunSelectedPipeline = $derived(runButtonReady(project, setupProject, selectedPipelineSha));
   let pipelineBusy = $state(false);
   let pipelineError = $state('');
   let pipelineMessage = $state('');
@@ -350,7 +351,7 @@
   }
 
   async function startRun() {
-    if (!project.trim() || busy) return;
+    if (!canRunSelectedPipeline || busy || setupBusy || pipelineBusy || !!stagedSha) return;
     busy = true;
     error = '';
     run = null;
@@ -521,8 +522,11 @@
 
   <section aria-labelledby="run-title">
     <h2 id="run-title">RUN/2 ausführen</h2>
-    <button disabled={busy || !project.trim() || !!stagedSha}
-      onclick={startRun}>{busy ? 'Engine arbeitet …' : 'Bestätigten Projekt-RUN starten'}</button>
+    <button disabled={!canRunSelectedPipeline || busy || setupBusy || pipelineBusy || !!stagedSha}
+      onclick={startRun}>{busy ? 'Engine arbeitet …' : canRunSelectedPipeline ? 'Technischen RUN starten' : 'Pipeline auswählen, um RUN zu starten'}</button>
+    {#if !canRunSelectedPipeline}
+      <p class="note" role="status">Noch nicht RUN-bereit: Im aktuellen Projekt zuerst eine technische Pipeline-Vorlage auswählen, die Ressourcen zuordnen und die registrierte Pipeline aktivieren.</p>
+    {/if}
     <p class="note">Die Engine prüft die bereits ausgewählte Pipeline und fixiert die aktive
       bestätigte Datensatztitelrevision im neuen RUN-Snapshot. Unbestätigte Drafts bleiben unwirksam.</p>
     {#if progress}<p role="status">{progress.stage}: {progress.percentage}% — {progress.message}</p>{/if}
