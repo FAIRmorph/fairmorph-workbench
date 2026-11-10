@@ -1,41 +1,42 @@
 import { z } from 'zod';
 
-const ProgressPayloadSchema = z.object({
+// The Engine owns this protocol. The Workbench validates only the event envelope
+// and known result fields; it never interprets scientific results.
+export const ProgressEvent = z.object({
   event: z.literal('progress'),
   stage: z.string().min(1),
   percentage: z.number().finite().min(0).max(100),
   message: z.string()
 });
-
-const ResultDataSchema = z.object({
-  processed_records: z.number().int().nonnegative(),
-  engine_python_version: z.string().min(1),
-  dataset_sha256: z.string().regex(/^[0-9a-fA-F]{64}$/),
-  completed_at: z.string().datetime({ offset: true }),
-  loaded_file: z.string().min(1)
+export const RunOutput = z.object({
+  name: z.string().min(1),
+  rows: z.number().int().nonnegative(),
+  columns: z.array(z.string())
 });
-
-const SuccessPayloadSchema = z.object({
-  event: z.literal('result'),
-  status: z.literal('success'),
-  data: ResultDataSchema
+export const RunResult = z.object({
+  run_id: z.string().min(1),
+  outputs: z.array(RunOutput)
 });
-
-const ErrorPayloadSchema = z.object({
+export const HandshakeResult = z.object({
+  protocol_version: z.literal('fairmorph.poc.ndjson/1'),
+  run_schema_version: z.literal('fairmorph.poc.run/2'),
+  engine_version: z.string().min(1),
+  commands: z.array(z.string())
+});
+export const ErrorEvent = z.object({
   event: z.literal('result'),
   status: z.literal('error'),
   message: z.string().min(1)
 });
-
-export const EngineEventSchema = z.union([
-  ProgressPayloadSchema,
-  SuccessPayloadSchema,
-  ErrorPayloadSchema
+export const EngineEvent = z.union([
+  ProgressEvent,
+  z.object({ event: z.literal('result'), status: z.literal('success'), data: z.unknown() }),
+  ErrorEvent
 ]);
 
-export type EngineEvent = z.infer<typeof EngineEventSchema>;
-export type EngineResultData = z.infer<typeof ResultDataSchema>;
+export type Progress = z.infer<typeof ProgressEvent>;
+export type RunSummary = z.infer<typeof RunResult>;
 
-export function parseEngineEvent(raw: string): EngineEvent {
-  return EngineEventSchema.parse(JSON.parse(raw));
+export function parseEngineEvent(raw: unknown) {
+  return EngineEvent.parse(typeof raw === 'string' ? JSON.parse(raw) : raw);
 }
