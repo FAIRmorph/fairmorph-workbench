@@ -4,8 +4,13 @@ mod engine;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             engine::engine_handshake,
+            engine::choose_project_parent,
+            engine::choose_source_files,
+            engine::create_project,
+            engine::import_project_source,
             engine::run_project,
             engine::dataset_metadata_status,
             engine::save_dataset_metadata_draft,
