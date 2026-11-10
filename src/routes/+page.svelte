@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { canInitializeProject, importsReady, pipelineBindingsComplete, sourceFileName, type SourceFile } from '$lib/project-setup';
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
   import {
@@ -13,7 +14,7 @@
   let parentFolder = $state('');
   let folderName = $state('');
   let setupProject = $state('');
-  let setupFiles = $state<{ path: string; role: '' | 'events' | 'counts'; imported: boolean; checksum: string; resourceId: string }[]>([]);
+  let setupFiles = $state<SourceFile[]>([]);
   let setupMessage = $state('');
   let pipelineTemplate = $state<PipelineTemplateInfo | null>(null);
   let pipelineBindings = $state<Record<string, string>>({});
@@ -24,21 +25,11 @@
   let pipelineBusy = $state(false);
   let pipelineError = $state('');
   let pipelineMessage = $state('');
-  let bindingsComplete = $derived(
-    !!pipelineTemplate && pipelineTemplate.inputs.every(input => {
-      const resource = setupFiles.find(file => file.resourceId === pipelineBindings[input.name]);
-      return !!resource?.imported && !!pipelineFormats[input.name];
-    })
-  );
+  let bindingsComplete = $derived(pipelineBindingsComplete(pipelineTemplate?.inputs, setupFiles, pipelineBindings, pipelineFormats));
   let setupBusy = $state(false);
   let setupError = $state('');
-  const sourceFileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
   let setupReady = $derived(!!setupProject && setupFiles.some(file => file.imported));
-  let canInitialize = $derived(
-    !!newName.trim() && !!parentFolder.trim() && !!folderName.trim()
-    && folderName !== '.' && folderName !== '..'
-    && !/[\\/]/.test(folderName)
-  );
+  let canInitialize = $derived(canInitializeProject(newName, parentFolder, folderName));
   let busy = $state(false);
   let engineVersion = $state('');
   let error = $state('');
@@ -127,7 +118,7 @@
   async function importSources() {
     if (!setupProject || busy || setupBusy) return;
     const pending = setupFiles.filter(file => !file.imported);
-    if (!pending.length || pending.some(file => !file.role)) {
+    if (!importsReady(setupFiles)) {
       setupError = 'Jeder noch nicht importierten Datei muss explizit events oder counts zugeordnet werden.';
       return;
     }
@@ -431,7 +422,7 @@
           {/if}
         </div>
       {/each}
-      <button onclick={importSources} disabled={setupBusy || busy || !setupFiles.some(file => !file.imported) || setupFiles.some(file => !file.imported && !file.role)}>
+      <button onclick={importSources} disabled={setupBusy || busy || !importsReady(setupFiles)}>
         Originaldateien importieren
       </button>
       {#if setupReady}
