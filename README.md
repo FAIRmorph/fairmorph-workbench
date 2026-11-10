@@ -1,45 +1,42 @@
-<div align="center">
-
 # FAIRmorph Workbench
 
-**Local-First Desktop Workbench for FAIR & Reproducible Ecological Data Curation**
+Local-first desktop user interface for the **FAIRmorph Engine**.
 
-[![License: MIT/Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue.svg)](#license)
-[![Tauri v2](https://img.shields.io/badge/Tauri-v2-FFC107?logo=tauri&logoColor=black)](https://tauri.app/)
-[![Rust](https://img.shields.io/badge/Rust-1.75+-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![Documentation](https://img.shields.io/badge/Docs-fairmorph.org-brightgreen)](https://fairmorph.github.io/fairmorph-documentation/)
+**Status (framework v0.13):** early **vertical Proof of Concept**, not a released product or a scientifically validated publication workflow. The Engine owns the normative data contracts, decisions, verification, RUN/2 artifacts and exports.
 
-</div>
+## Current vertical integration
 
----
+- Tauri v2/Rust starts the local Engine only through an allowlisted `handshake` or `run-pipeline --project <path>` action.
+- Svelte displays progress and the Engine's result (`run_id`, output table names, row counts, columns).
+- The Workbench passes **no scientific configuration values** as CLI arguments or direct compiler parameters. The Engine reads the chosen project and its already approved, SHA-256-pinned configuration.
+- No approval is implied by editing a field. The current UI does not yet edit project configurations.
 
-## 📌 Overview
+The retired benchmark `run_poc` / `PoCRunner` is not part of the Workbench integration.
 
-**FAIRmorph Workbench** is the cross-platform desktop user interface and process orchestrator for the **FAIRmorph** ecosystem. Built on **Tauri v2** and **Rust**, it provides a local-first, visual workbench designed for marine biologists, ecologists, and research data managers to curate heterogeneous observation, sampling, and media data into standardized, FAIR-compliant scientific packages without writing code.
+## Development
 
-The application serves as a non-invasive bridge between raw field assets (CSVs, Excel files, image folders) and global biodiversity publishing endpoints (**OBIS**, **GBIF**, and institutional repositories).
+Requirements: Node.js, pnpm, Rust/Cargo with Tauri v2 platform prerequisites, and a compatible local FAIRmorph Engine checkout.
 
-> 🔒 **Local-First Assurance:** All file processing, schema inspection, image metadata extraction, and packaging execute entirely on your local machine. No research data, unpublished coordinates, or confidential observations are uploaded to third-party cloud services.
+```sh
+pnpm install
+pnpm check
+pnpm test:frontend
+cargo test --manifest-path src-tauri/Cargo.toml
+pnpm tauri dev
+```
 
+For development the Rust launcher finds a sibling `fairmorph-engine/.venv` or uses `FAIRMORPH_ENGINE_PYTHON`. The Python interpreter must have the current Engine installed. Release builds expect a packaged executable in the Tauri `engine/` resource folder; release bundling and commit pinning remain open work.
 
+To use the Workbench, initialize a project using the Engine, import resources, register and explicitly confirm the applicable mapping/Entity pipeline and profile bindings, then select the pipeline in the project. The Workbench runs that selected project **without changing its config**.
 
-## ✨ Key Features
+## Architecture and limits
 
-* 🗺️ **Visual Semantic Mapping:** Interactively map arbitrary source columns to standard **Darwin Core (DwC)** concepts (`scientificName`, `eventDate`, `decimalLatitude`, etc.).
-* 🔄 **Reusable Project Recipes:** Save mapping configurations, structural rules, and value normalizations into versioned project files (`.yaml`) to automate recurring monthly intakes.
-* ⚡ **Streaming Processing at Scale:** Process multi-gigabyte CSV datasets and tens of thousands of media files with minimal RAM utilization via local batch streaming.
-* 📸 **Image & EXIF Metadata Integration:** Associate photographs with biological occurrences or sampling events using header-only metadata parsing (`DateTimeOriginal`, GPS, image identifiers).
-* ⚙️ **Automated Validation:** Execute domain-specific semantic and structural quality-control checks before packaging outputs.
-* 📦 **Standard Output Packages:** Export complete **Darwin Core Archives (DwC-A)**, **Ecological Metadata Language (EML)** metadata files, and machine-readable **Provenance Manifests** (input/output cryptographic hashes).
+The user interface will eventually **edit project-local configuration drafts**, not submit scientific values directly to the Engine. Drafts must be registered as *new* immutable revisions, validated and explicitly approved before selection; existing content-addressed pipeline files, source bytes and completed RUNs must never be overwritten. The current Engine stores certain approvals/revision histories in SQLite, so directly modifying JSON files is **not** sufficient to register approved changes.
 
-## Supported Standards & Target Infrastructure
+A single UI text input flowing straight into an EML compiler would violate this boundary. EML publication from a RUN-bound, approved metadata revision needs a separate target-specific export contract (P0.7).
 
-- 📦 **Biodiversity Data Packages:** Darwin Core Archive (DwC-A), Darwin Core Data Package (DwC-DP), and Frictionless Data Packages.
-- 🌐 **Global Aggregators:** OBIS (Ocean Biodiversity Information System), GBIF (Global Biodiversity Information Facility), and EMODnet.
-- 🗺️ **GIS & Spatial Formats:** OGC GeoPackage (`.gpkg`) for analysis in QGIS, ArcGIS, and spatial R/Python pipelines.
-- 📚 **General Archival & DOIs:** Zenodo, PANGAEA, and Dryad for citable data publishing.
+The current milestone does **not** provide field-semantic cards, mapping preview, findings, a revision editor, generalized publication or CS-PHOC scientific regression. Those remain P0.6–P0.8 follow-up work.
 
+See [P0.6 Workbench vertical checkpoint](docs/P0.6-WORKBENCH-VERTICAL.md) and the Engine's [v0.13 binding scope](https://github.com/FAIRmorph/fairmorph-engine/blob/main/docs/FRAMEWORK-v0.13-POC-SCOPE.md).
 
-## 🏗️ Architecture
-
-`fairmorph-workbench` acts as the user-facing shell and runtime supervisor. It manages native window lifecycles, file pickers, and OS integrations while orchestrating the underlying execution engine (`fairfield-engine`).
+License: MIT.
