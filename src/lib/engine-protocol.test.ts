@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApprovedDatasetMetadata, DatasetMetadataStatus, EngineEvent, HandshakeResult, ProgressEvent, RunResult, StagedDatasetMetadata, parseEngineEvent } from './engine-protocol';
+import { ApprovedDatasetMetadata, DatasetMetadataStatus, CreatedProject, ImportedResource, EngineEvent, HandshakeResult, ProgressEvent, RunResult, StagedDatasetMetadata, parseEngineEvent } from './engine-protocol';
 
 describe('Engine v0.13 RUN/2 boundary', () => {
   it('accepts Engine handshake and run support', () => {
@@ -71,5 +71,23 @@ describe('Project-file dataset metadata revision responses', () => {
       status: 'approved', revision_sha256: sha, title: 'A title',
       confirmed_by: '', confirmed_at: '2026-11-10'
     }).success).toBe(false);
+  });
+});
+
+describe('Project setup Engine result contracts', () => {
+  it('accepts Engine-generated project identity', () => {
+    expect(CreatedProject.parse({
+      project_id: '12345678-1234-4234-8234-123456789abc',
+      project_path: '/tmp/my-project.fairmorph'
+    }).project_path).toBe('/tmp/my-project.fairmorph');
+  });
+  it('requires a recognized role and valid source checksum', () => {
+    const source = {
+      resource_id: 'resource-events-abc', role: 'events',
+      original_name: 'events.csv', sha256: 'a'.repeat(64)
+    };
+    expect(ImportedResource.parse(source).role).toBe('events');
+    expect(ImportedResource.safeParse({ ...source, role: 'unknown' }).success).toBe(false);
+    expect(ImportedResource.safeParse({ ...source, sha256: 'broken' }).success).toBe(false);
   });
 });
