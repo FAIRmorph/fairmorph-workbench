@@ -64,3 +64,15 @@ export type RunSummary = z.infer<typeof RunResult>;
 export function parseEngineEvent(raw: unknown) {
   return EngineEvent.parse(typeof raw === 'string' ? JSON.parse(raw) : raw);
 }
+
+export const CreatedProject = z.object({
+  project_id: z.string().uuid(),
+  project_path: z.string().min(1)
+});
+export const ImportedResource = z.object({
+  resource_id: z.string().min(1),
+  role: z.enum(['events', 'counts']),
+  original_name: z.string().min(1),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/)
+});
+export type ImportedSource = z.infer<typeof ImportedResource>;
