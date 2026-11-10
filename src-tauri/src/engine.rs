@@ -518,7 +518,8 @@ mod tests {
     fn validates_new_project_location_and_role() {
         let root = std::env::temp_dir();
         let target = root.join(format!("fairmorph-proposed-{}-unused", std::process::id()));
-        assert_eq!(new_project_target(target.to_str().unwrap(), "Survey").unwrap(), target);
+        let expected = root.canonicalize().unwrap().join(target.file_name().unwrap());
+        assert_eq!(new_project_target(target.to_str().unwrap(), "Survey").unwrap(), expected);
         assert!(new_project_target("", "Survey").is_err());
         assert!(new_project_target(root.to_str().unwrap(), "Survey").is_err());
         assert!(new_project_target(target.to_str().unwrap(), "").is_err());
