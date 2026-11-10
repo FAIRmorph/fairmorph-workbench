@@ -6,6 +6,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_dialog::DialogExt;
 
 #[cfg(not(debug_assertions))]
 use tauri::Manager;
@@ -84,6 +85,10 @@ fn execute(app: AppHandle, action: &str, project: Option<&Path>) -> Result<Value
         }
         _ => return Err("Unsupported Engine command".into()),
     }
+    execute_command(app, cmd)
+}
+
+fn execute_command(app: AppHandle, mut cmd: Command) -> Result<Value, String> {
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| format!("Cannot start Engine: {e}"))?;
     let stdout = child.stdout.take().ok_or("Missing Engine stdout")?;
@@ -147,6 +152,99 @@ fn execute(app: AppHandle, action: &str, project: Option<&Path>) -> Result<Value
         return Err(format!("{message}{}", if diagnostic.is_empty() { String::new() } else { format!(": {diagnostic}") }));
     }
     result.get("data").cloned().ok_or("Engine success has no data".into())
+}
+
+fn new_project_target(target: &str, name: &str) -> Result<PathBuf, String> {
+    if name.trim().is_empty() {
+        return Err("A project name is required".into());
+    }
+    let path = PathBuf::from(target);
+    if !path.is_absolute() || path.exists() || path.is_symlink() {
+        return Err("Choose a new absolute project path; existing folders are not overwritten".into());
+    }
+    let parent = path.parent().ok_or("Missing parent directory")?;
+    if !parent.is_dir() || parent.is_symlink() {
+        return Err("Parent directory must exist and not be a symlink".into());
+    }
+    let parent = parent.canonicalize().map_err(|e| e.to_string())?;
+    let file_name = path.file_name().ok_or("Missing project directory name")?;
+    Ok(parent.join(file_name))
+}
+
+fn import_source_path(source: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(source);
+    if !path.is_absolute() || !path.is_file() || path.is_symlink() {
+        return Err("Source must be an existing regular file at an absolute path".into());
+    }
+    path.canonicalize().map_err(|e| e.to_string())
+}
+
+fn resource_role(role: &str) -> Result<&str, String> {
+    // These are technical import roles, not approved scientific entity types.
+    if matches!(role, "events" | "counts") {
+        Ok(role)
+    } else {
+        Err("Choose a resource role: events or counts".into())
+    }
+}
+
+#[tauri::command]
+pub async fn choose_project_parent(app: AppHandle) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = app.dialog().file().blocking_pick_folder();
+        path.map(|item| item.into_path()
+            .map(|p| p.to_string_lossy().into_owned())
+            .map_err(|e| e.to_string()))
+            .transpose()
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn choose_source_files(app: AppHandle) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let paths = app.dialog().file().blocking_pick_files().unwrap_or_default();
+        paths.into_iter().map(|item| item.into_path()
+            .map(|p| p.to_string_lossy().into_owned())
+            .map_err(|e| e.to_string())).collect()
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn create_project(
+    app: AppHandle, project: String, name: String,
+) -> Result<Value, String> {
+    let target = new_project_target(&project, &name)?;
+    let name = name.trim().to_owned();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = engine_command(&app)?;
+        cmd.arg("init-project").arg("--project").arg(&target)
+            .arg("--name").arg(name);
+        let result = execute_command(app, cmd)?;
+        if result.get("project_id").and_then(Value::as_str).is_none() {
+            return Err("Engine did not return a project identifier".into());
+        }
+        Ok(result)
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn import_project_source(
+    app: AppHandle, project: String, source: String, role: String,
+) -> Result<Value, String> {
+    let project = validate_project(&project)?;
+    let source = import_source_path(&source)?;
+    let role = resource_role(&role)?.to_owned();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = engine_command(&app)?;
+        cmd.arg("import-resource").arg("--project").arg(&project)
+            .arg("--source").arg(&source).arg("--role").arg(&role);
+        let result = execute_command(app, cmd)?;
+        if result.get("resource_id").and_then(Value::as_str).is_none()
+            || result.get("sha256").and_then(Value::as_str).is_none() {
+            return Err("Engine did not return source identity and checksum".into());
+        }
+        Ok(result)
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -267,8 +365,22 @@ pub async fn confirm_dataset_metadata(
 
 #[cfg(test)]
 mod tests {
-    use super::{atomic_draft_write, validate_project};
+    use super::{atomic_draft_write, validate_project, new_project_target, resource_role, import_source_path};
     use serde_json::json;
+
+    #[test]
+    fn validates_new_project_location_and_role() {
+        let root = std::env::temp_dir();
+        let target = root.join(format!("fairmorph-proposed-{}-unused", std::process::id()));
+        assert_eq!(new_project_target(target.to_str().unwrap(), "Survey").unwrap(), target);
+        assert!(new_project_target("", "Survey").is_err());
+        assert!(new_project_target(root.to_str().unwrap(), "Survey").is_err());
+        assert!(new_project_target(target.to_str().unwrap(), "").is_err());
+        assert!(resource_role("events").is_ok());
+        assert!(resource_role("counts").is_ok());
+        assert!(resource_role("other").is_err());
+        assert!(import_source_path(target.to_str().unwrap()).is_err());
+    }
 
     #[test]
     fn rejects_missing_project() {
