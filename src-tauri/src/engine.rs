@@ -267,7 +267,8 @@ pub async fn confirm_dataset_metadata(
 
 #[cfg(test)]
 mod tests {
-    use super::validate_project;
+    use super::{atomic_draft_write, validate_project};
+    use serde_json::json;
 
     #[test]
     fn rejects_missing_project() {
@@ -282,4 +283,42 @@ mod tests {
         assert!(validate_project(temporary.to_str().unwrap()).is_err());
         std::fs::remove_dir_all(&temporary).unwrap();
     }
+    #[test]
+    fn only_draft_file_changes_when_editing_title() {
+        let temporary = std::env::temp_dir().join(format!(
+            "fairmorph-draft-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(temporary.join("configurations/pipelines")).unwrap();
+        let project_json = temporary.join("project.json");
+        std::fs::write(&project_json, "{}").unwrap();
+        let pinned = temporary.join("configurations/pipelines/pinned.json");
+        std::fs::write(&pinned, "unchanged").unwrap();
+        let validated = validate_project(temporary.to_str().unwrap()).unwrap();
+
+        atomic_draft_write(&validated, "dataset-metadata.json", &json!({
+            "schema_version": "fairmorph.dataset-metadata/1",
+            "title": "First scientific dataset title",
+            "parent_revision_sha256": null
+        })).unwrap();
+        let draft = validated.join("configurations/drafts/dataset-metadata.json");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(&draft).unwrap())
+                .unwrap()["title"],
+            "First scientific dataset title"
+        );
+        assert_eq!(std::fs::read_to_string(&pinned).unwrap(), "unchanged");
+
+        atomic_draft_write(&validated, "dataset-metadata.json", &json!({
+            "schema_version": "fairmorph.dataset-metadata/1",
+            "title": "Second scientific dataset title",
+            "parent_revision_sha256": null
+        })).unwrap();
+        assert!(std::fs::read_to_string(&draft).unwrap().contains("Second scientific"));
+        assert_eq!(std::fs::read_to_string(&pinned).unwrap(), "unchanged");
+        std::fs::remove_dir_all(&temporary).unwrap();
+    }
+
 }
