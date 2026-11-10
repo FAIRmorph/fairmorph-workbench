@@ -1,6 +1,7 @@
-//! Minimal project-scoped, read-only Workbench-to-Engine process transport.
+//! Project-scoped Workbench-to-Engine process transport and draft-file editor.
 //! Scientific values and configuration are read by the Engine from project files.
-use serde_json::Value;
+use serde_json::{json, Value};
+use std::fs;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -77,9 +78,9 @@ fn execute(app: AppHandle, action: &str, project: Option<&Path>) -> Result<Value
     let mut cmd = engine_command(&app)?;
     match action {
         "handshake" => { cmd.arg("handshake"); }
-        "run-pipeline" => {
+        "run-pipeline" | "show-dataset-metadata" | "stage-dataset-metadata" | "approve-dataset-metadata" => {
             let directory = project.ok_or("RUN requires a project")?;
-            cmd.arg("run-pipeline").arg("--project").arg(directory);
+            cmd.arg(action).arg("--project").arg(directory);
         }
         _ => return Err("Unsupported Engine command".into()),
     }
@@ -159,6 +160,109 @@ pub async fn run_project(app: AppHandle, project: String) -> Result<Value, Strin
     let project = validate_project(&project)?;
     tauri::async_runtime::spawn_blocking(move || execute(app, "run-pipeline", Some(&project)))
         .await.map_err(|e| e.to_string())?
+}
+
+
+fn validate_revision_sha(sha: &str) -> Result<(), String> {
+    if sha.len() != 64 || !sha.bytes().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()) {
+        return Err("Invalid revision SHA-256".into());
+    }
+    Ok(())
+}
+
+fn draft_directory(project: &Path) -> Result<PathBuf, String> {
+    let config = project.join("configurations");
+    if !config.is_dir() || config.is_symlink() {
+        return Err("Missing or unsafe configurations directory".into());
+    }
+    let dir = config.join("drafts");
+    if dir.exists() && (!dir.is_dir() || dir.is_symlink()) {
+        return Err("Unsafe drafts directory".into());
+    }
+    fs::create_dir_all(&dir).map_err(|e| format!("Cannot create draft directory: {e}"))?;
+    Ok(dir)
+}
+
+fn atomic_draft_write(project: &Path, name: &str, document: &Value) -> Result<(), String> {
+    let dir = draft_directory(project)?;
+    let path = dir.join(name);
+    if path.is_symlink() || (path.exists() && !path.is_file()) {
+        return Err("Unsafe draft file".into());
+    }
+    let temporary = dir.join(format!(".{name}.{}.tmp", uuid::Uuid::new_v4()));
+    let bytes = serde_json::to_vec_pretty(document).map_err(|e| e.to_string())?;
+    let result = (|| {
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temporary)
+            .map_err(|e| e.to_string())?;
+        file.write_all(&bytes).map_err(|e| e.to_string())?;
+        file.write_all(b"\n").map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+        fs::rename(&temporary, &path).map_err(|e| e.to_string())
+    })();
+    let _ = fs::remove_file(&temporary);
+    result
+}
+
+#[tauri::command]
+pub async fn dataset_metadata_status(app: AppHandle, project: String) -> Result<Value, String> {
+    let project = validate_project(&project)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        execute(app, "show-dataset-metadata", Some(&project))
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn save_dataset_metadata_draft(
+    project: String, title: String, parent_revision_sha256: Option<String>,
+) -> Result<(), String> {
+    let project = validate_project(&project)?;
+    let title = title.trim();
+    if title.chars().count() < 5 || title.chars().count() > 255 {
+        return Err("Title must be between 5 and 255 characters".into());
+    }
+    if let Some(ref sha) = parent_revision_sha256 {
+        validate_revision_sha(sha)?;
+    }
+    // A draft is NOT a revision or an approval. The Engine verifies the parent
+    // against the current pointer on stage, before registering immutable bytes.
+    let document = json!({
+        "schema_version": "fairmorph.dataset-metadata/1",
+        "title": title,
+        "parent_revision_sha256": parent_revision_sha256,
+    });
+    atomic_draft_write(&project, "dataset-metadata.json", &document)
+}
+
+#[tauri::command]
+pub async fn stage_dataset_metadata(app: AppHandle, project: String) -> Result<Value, String> {
+    let project = validate_project(&project)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        execute(app, "stage-dataset-metadata", Some(&project))
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn confirm_dataset_metadata(
+    app: AppHandle, project: String, revision_sha256: String, confirmed_by: String,
+) -> Result<Value, String> {
+    let project = validate_project(&project)?;
+    validate_revision_sha(&revision_sha256)?;
+    let confirmed_by = confirmed_by.trim();
+    if confirmed_by.is_empty() {
+        return Err("A confirming user is required".into());
+    }
+    // The confirmation is intentionally a separate project-local decision file.
+    // No semantic or review value is passed to Python via CLI arguments.
+    atomic_draft_write(&project, "dataset-metadata-approval.json", &json!({
+        "schema_version": "fairmorph.dataset-metadata-approval/1",
+        "decision": "approve",
+        "revision_sha256": revision_sha256,
+        "confirmed_by": confirmed_by,
+    }))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        execute(app, "approve-dataset-metadata", Some(&project))
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]
