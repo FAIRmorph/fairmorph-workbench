@@ -1,138 +1,324 @@
-use tauri::{AppHandle, Emitter};
+//! Project-scoped Workbench-to-Engine process transport and draft-file editor.
+//! Scientific values and configuration are read by the Engine from project files.
+use serde_json::{json, Value};
+use std::fs;
 use std::io::{BufRead, BufReader, Read};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-
-#[cfg(debug_assertions)]
-use std::path::PathBuf;
+use tauri::{AppHandle, Emitter};
 
 #[cfg(not(debug_assertions))]
 use tauri::Manager;
 
-
 #[cfg(debug_assertions)]
 fn resolve_python_bin() -> Result<PathBuf, String> {
-    // 1. Optional: Überprüfe eine explizite Umgebungsvariable
-    if let Ok(env_path) = std::env::var("FAIRMORPH_ENGINE_PYTHON") {
-        let p = PathBuf::from(env_path);
-        if p.exists() {
-            return Ok(p);
-        }
-    }
-
-    // 2. Suche relative Pfade abhängig vom aktuellen Arbeitsverzeichnis
-    #[cfg(target_os = "windows")]
-    let candidates = [
-        "../../fairmorph-engine/.venv/Scripts/python.exe", // wenn cwd = src-tauri
-        "../fairmorph-engine/.venv/Scripts/python.exe",    // wenn cwd = repo root
-    ];
-
-    #[cfg(not(target_os = "windows"))]
-    let candidates = [
-        "../../fairmorph-engine/.venv/bin/python", // wenn cwd = src-tauri
-        "../fairmorph-engine/.venv/bin/python",    // wenn cwd = repo root
-    ];
-
-    for candidate in candidates {
+    if let Ok(candidate) = std::env::var("FAIRMORPH_ENGINE_PYTHON") {
         let path = PathBuf::from(candidate);
-        if path.exists() {
+        if path.is_file() {
             return Ok(path);
         }
     }
-
-    let cwd = std::env::current_dir().unwrap_or_default();
-    Err(format!(
-        "Python executable not found. Tried paths: {:?} (Current working directory: {:?})",
-        candidates, cwd
-    ))
+    #[cfg(target_os = "windows")]
+    let candidates = [
+        "../../fairmorph-engine/.venv/Scripts/python.exe",
+        "../fairmorph-engine/.venv/Scripts/python.exe",
+    ];
+    #[cfg(not(target_os = "windows"))]
+    let candidates = [
+        "../../fairmorph-engine/.venv/bin/python",
+        "../fairmorph-engine/.venv/bin/python",
+    ];
+    for candidate in candidates {
+        let path = PathBuf::from(candidate);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+    Err("Engine Python not found; set FAIRMORPH_ENGINE_PYTHON".into())
 }
 
-#[tauri::command]
-pub async fn run_poc(app: AppHandle, records: u32) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        #[cfg(debug_assertions)]
-        let mut cmd = {
-            let python = resolve_python_bin()?;
-            let mut c = Command::new(python);
-            c.args(["-m", "fairmorph_engine.cli"]);
-            c
-        };
+fn validate_project(project: &str) -> Result<PathBuf, String> {
+    if project.trim().is_empty() {
+        return Err("A project directory is required".into());
+    }
+    let path = PathBuf::from(project);
+    if path.is_symlink() || !path.is_dir() {
+        return Err("Project must be an existing non-symlink directory".into());
+    }
+    let descriptor = path.join("project.json");
+    if descriptor.is_symlink() || !descriptor.is_file() {
+        return Err("The selected directory has no regular project.json".into());
+    }
+    path.canonicalize().map_err(|e| format!("Project path error: {e}"))
+}
 
-        #[cfg(not(debug_assertions))]
-        let mut cmd = {
-            let resource_dir = app
-                .path()
-                .resource_dir()
-                .map_err(|e| format!("Resource dir error: {}", e))?;
+fn engine_command(app: &AppHandle) -> Result<Command, String> {
+    #[cfg(debug_assertions)]
+    {
+        let mut command = Command::new(resolve_python_bin()?);
+        command.args(["-m", "fairmorph_engine.cli"]);
+        let _ = app;
+        Ok(command)
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let dir = app.path().resource_dir().map_err(|e| e.to_string())?;
+        #[cfg(target_os = "windows")]
+        let binary = dir.join("engine/fairmorph-engine.exe");
+        #[cfg(not(target_os = "windows"))]
+        let binary = dir.join("engine/fairmorph-engine");
+        if !binary.is_file() {
+            return Err(format!("Engine executable missing: {}", binary.display()));
+        }
+        Ok(Command::new(binary))
+    }
+}
 
-            #[cfg(target_os = "windows")]
-            let bin_name = "fairmorph-engine.exe";
-            #[cfg(not(target_os = "windows"))]
-            let bin_name = "fairmorph-engine";
-
-            let bin_path = resource_dir.join("engine").join(bin_name);
-            if !bin_path.exists() {
-                return Err(format!("Engine binary not found at {:?}", bin_path));
-            }
-            Command::new(bin_path)
-        };
-
-        cmd.args(["poc", "--records", &records.to_string()]);
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
-
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| format!("Failed to start engine process: {}", e))?;
-
-        let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
-        // Drain stderr concurrently to avoid blocking when the pipe fills.
-        let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
-        let stderr_reader = std::thread::spawn(move || {
-            let mut message = String::new();
-            let mut stderr = stderr;
-            let _ = stderr.read_to_string(&mut message);
-            message
-        });
-        let reader = BufReader::new(stdout);
-
-        let mut stream_error = None;
-        for line in reader.lines() {
-            match line {
-                Ok(line) if !line.trim().is_empty() => {
-                    if let Err(error) = app.emit("poc-event", line) {
-                        stream_error = Some(format!("Failed to emit engine event: {error}"));
+fn execute(app: AppHandle, action: &str, project: Option<&Path>) -> Result<Value, String> {
+    let mut cmd = engine_command(&app)?;
+    match action {
+        "handshake" => { cmd.arg("handshake"); }
+        "run-pipeline" | "show-dataset-metadata" | "stage-dataset-metadata" | "approve-dataset-metadata" => {
+            let directory = project.ok_or("RUN requires a project")?;
+            cmd.arg(action).arg("--project").arg(directory);
+        }
+        _ => return Err("Unsupported Engine command".into()),
+    }
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("Cannot start Engine: {e}"))?;
+    let stdout = child.stdout.take().ok_or("Missing Engine stdout")?;
+    let mut stderr = child.stderr.take().ok_or("Missing Engine stderr")?;
+    let stderr_reader = std::thread::spawn(move || {
+        let mut message = String::new();
+        let _ = stderr.read_to_string(&mut message);
+        message
+    });
+    let mut final_result: Option<Value> = None;
+    let mut protocol_error: Option<String> = None;
+    for line in BufReader::new(stdout).lines() {
+        match line {
+            Ok(line) if line.trim().is_empty() => continue,
+            Ok(line) => {
+                match serde_json::from_str::<Value>(&line) {
+                    Ok(message) => {
+                        match message.get("event").and_then(Value::as_str) {
+                            Some("progress") => {
+                                if let Err(error) = app.emit("engine-progress", &message) {
+                                    protocol_error = Some(format!("Cannot display progress: {error}"));
+                                    break;
+                                }
+                            }
+                            Some("result") => {
+                                if final_result.is_some() {
+                                    protocol_error = Some("Multiple Engine results".into());
+                                    break;
+                                }
+                                final_result = Some(message);
+                            }
+                            _ => {
+                                protocol_error = Some("Unexpected Engine event".into());
+                                break;
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        protocol_error = Some(format!("Invalid Engine NDJSON: {error}"));
                         break;
                     }
                 }
-                Ok(_) => {}
-                Err(error) => {
-                    stream_error = Some(format!("Failed to read engine output: {error}"));
-                    break;
-                }
+            }
+            Err(error) => {
+                protocol_error = Some(format!("Cannot read Engine stdout: {error}"));
+                break;
             }
         }
-
-        if stream_error.is_some() {
-            let _ = child.kill();
-        }
-        let status = child.wait().map_err(|e| e.to_string())?;
-        let err_msg = stderr_reader
-            .join()
-            .map_err(|_| "Failed to read engine stderr".to_string())?;
-        if let Some(error) = stream_error {
-            return Err(error);
-        }
-        if !status.success() {
-            return Err(if err_msg.is_empty() {
-                format!("Engine exited with status {}", status)
-            } else {
-                format!("Engine exited with status {}: {}", status, err_msg)
-            });
-        }
-
-        Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }
+    if protocol_error.is_some() {
+        let _ = child.kill();
+    }
+    let status = child.wait().map_err(|e| e.to_string())?;
+    let diagnostic = stderr_reader.join().map_err(|_| "stderr reader failed")?;
+    if let Some(error) = protocol_error {
+        return Err(error);
+    }
+    let result = final_result.ok_or_else(|| format!("Engine returned no result: {diagnostic}"))?;
+    if !status.success() || result.get("status").and_then(Value::as_str) != Some("success") {
+        let message = result.get("message").and_then(Value::as_str).unwrap_or("Engine failed");
+        return Err(format!("{message}{}", if diagnostic.is_empty() { String::new() } else { format!(": {diagnostic}") }));
+    }
+    result.get("data").cloned().ok_or("Engine success has no data".into())
 }
 
+#[tauri::command]
+pub async fn engine_handshake(app: AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || execute(app, "handshake", None))
+        .await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn run_project(app: AppHandle, project: String) -> Result<Value, String> {
+    let project = validate_project(&project)?;
+    tauri::async_runtime::spawn_blocking(move || execute(app, "run-pipeline", Some(&project)))
+        .await.map_err(|e| e.to_string())?
+}
+
+
+fn validate_revision_sha(sha: &str) -> Result<(), String> {
+    if sha.len() != 64 || !sha.bytes().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()) {
+        return Err("Invalid revision SHA-256".into());
+    }
+    Ok(())
+}
+
+fn draft_directory(project: &Path) -> Result<PathBuf, String> {
+    let config = project.join("configurations");
+    if !config.is_dir() || config.is_symlink() {
+        return Err("Missing or unsafe configurations directory".into());
+    }
+    let dir = config.join("drafts");
+    if dir.exists() && (!dir.is_dir() || dir.is_symlink()) {
+        return Err("Unsafe drafts directory".into());
+    }
+    fs::create_dir_all(&dir).map_err(|e| format!("Cannot create draft directory: {e}"))?;
+    Ok(dir)
+}
+
+fn atomic_draft_write(project: &Path, name: &str, document: &Value) -> Result<(), String> {
+    let dir = draft_directory(project)?;
+    let path = dir.join(name);
+    if path.is_symlink() || (path.exists() && !path.is_file()) {
+        return Err("Unsafe draft file".into());
+    }
+    let temporary = dir.join(format!(".{name}.{}.{}.tmp", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_nanos()));
+    let bytes = serde_json::to_vec_pretty(document).map_err(|e| e.to_string())?;
+    let result = (|| {
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temporary)
+            .map_err(|e| e.to_string())?;
+        file.write_all(&bytes).map_err(|e| e.to_string())?;
+        file.write_all(b"\n").map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+        fs::rename(&temporary, &path).map_err(|e| e.to_string())
+    })();
+    let _ = fs::remove_file(&temporary);
+    result
+}
+
+#[tauri::command]
+pub async fn dataset_metadata_status(app: AppHandle, project: String) -> Result<Value, String> {
+    let project = validate_project(&project)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        execute(app, "show-dataset-metadata", Some(&project))
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn save_dataset_metadata_draft(
+    project: String, title: String, parent_revision_sha256: Option<String>,
+) -> Result<(), String> {
+    let project = validate_project(&project)?;
+    let title = title.trim();
+    if title.chars().count() < 5 || title.chars().count() > 255 {
+        return Err("Title must be between 5 and 255 characters".into());
+    }
+    if let Some(ref sha) = parent_revision_sha256 {
+        validate_revision_sha(sha)?;
+    }
+    // A draft is NOT a revision or an approval. The Engine verifies the parent
+    // against the current pointer on stage, before registering immutable bytes.
+    let document = json!({
+        "schema_version": "fairmorph.dataset-metadata/1",
+        "title": title,
+        "parent_revision_sha256": parent_revision_sha256,
+    });
+    atomic_draft_write(&project, "dataset-metadata.json", &document)
+}
+
+#[tauri::command]
+pub async fn stage_dataset_metadata(app: AppHandle, project: String) -> Result<Value, String> {
+    let project = validate_project(&project)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        execute(app, "stage-dataset-metadata", Some(&project))
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn confirm_dataset_metadata(
+    app: AppHandle, project: String, revision_sha256: String, confirmed_by: String,
+) -> Result<Value, String> {
+    let project = validate_project(&project)?;
+    validate_revision_sha(&revision_sha256)?;
+    let confirmed_by = confirmed_by.trim();
+    if confirmed_by.is_empty() {
+        return Err("A confirming user is required".into());
+    }
+    // The confirmation is intentionally a separate project-local decision file.
+    // No semantic or review value is passed to Python via CLI arguments.
+    atomic_draft_write(&project, "dataset-metadata-approval.json", &json!({
+        "schema_version": "fairmorph.dataset-metadata-approval/1",
+        "decision": "approve",
+        "revision_sha256": revision_sha256,
+        "confirmed_by": confirmed_by,
+    }))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        execute(app, "approve-dataset-metadata", Some(&project))
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{atomic_draft_write, validate_project};
+    use serde_json::json;
+
+    #[test]
+    fn rejects_missing_project() {
+        assert!(validate_project("").is_err());
+        assert!(validate_project("/not/a/real/fairmorph/project").is_err());
+    }
+
+    #[test]
+    fn requires_project_descriptor() {
+        let temporary = std::env::temp_dir().join(format!("fairmorph-workbench-{}", std::process::id()));
+        std::fs::create_dir_all(&temporary).unwrap();
+        assert!(validate_project(temporary.to_str().unwrap()).is_err());
+        std::fs::remove_dir_all(&temporary).unwrap();
+    }
+    #[test]
+    fn only_draft_file_changes_when_editing_title() {
+        let temporary = std::env::temp_dir().join(format!(
+            "fairmorph-draft-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(temporary.join("configurations/pipelines")).unwrap();
+        let project_json = temporary.join("project.json");
+        std::fs::write(&project_json, "{}").unwrap();
+        let pinned = temporary.join("configurations/pipelines/pinned.json");
+        std::fs::write(&pinned, "unchanged").unwrap();
+        let validated = validate_project(temporary.to_str().unwrap()).unwrap();
+
+        atomic_draft_write(&validated, "dataset-metadata.json", &json!({
+            "schema_version": "fairmorph.dataset-metadata/1",
+            "title": "First scientific dataset title",
+            "parent_revision_sha256": null
+        })).unwrap();
+        let draft = validated.join("configurations/drafts/dataset-metadata.json");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(&draft).unwrap())
+                .unwrap()["title"],
+            "First scientific dataset title"
+        );
+        assert_eq!(std::fs::read_to_string(&pinned).unwrap(), "unchanged");
+
+        atomic_draft_write(&validated, "dataset-metadata.json", &json!({
+            "schema_version": "fairmorph.dataset-metadata/1",
+            "title": "Second scientific dataset title",
+            "parent_revision_sha256": null
+        })).unwrap();
+        assert!(std::fs::read_to_string(&draft).unwrap().contains("Second scientific"));
+        assert_eq!(std::fs::read_to_string(&pinned).unwrap(), "unchanged");
+        std::fs::remove_dir_all(&temporary).unwrap();
+    }
+
+}
