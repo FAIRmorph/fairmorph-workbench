@@ -45,5 +45,5 @@ jobs:
           pnpm test:frontend
       - name: Check Rust and Engine process integration
         env:
-          FAIRMORPH_ENGINE_PYTHON: ${{ github.workspace }}\\fairmorph-engine\\.venv\\Scripts\\python.exe
+          FAIRMORPH_ENGINE_PYTHON: ${{ github.workspace }}\fairmorph-engine\.venv\Scripts\python.exe
         run: cargo test --manifest-path src-tauri/Cargo.toml
