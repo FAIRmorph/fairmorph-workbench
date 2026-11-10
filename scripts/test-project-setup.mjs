@@ -4,7 +4,7 @@
  * Run with: node scripts/test-project-setup.mjs (Engine installed in Python).
  */
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -17,8 +17,8 @@ const sources = join(root, 'sources');
 mkdirSync(sources);
 const events = join(sources, 'events.csv');
 const counts = join(sources, 'counts.csv');
-writeFileSync(events, 'id,date\\n1,2026-01-01\\n2,2026-01-02\\n');
-writeFileSync(counts, 'id,count\\n1,0\\n2,4\\n');
+writeFileSync(events, 'id,date\n1,2026-01-01\n2,2026-01-02\n');
+writeFileSync(counts, 'id,count\n1,0\n2,4\n');
 const sourceBytes = new Map([[events, readFileSync(events)], [counts, readFileSync(counts)]]);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 
@@ -27,7 +27,7 @@ function cli(command, args = [], success = true) {
     encoding: 'utf8', timeout: 60_000
   });
   if (result.error) throw result.error;
-  const events = (result.stdout || '').trim().split(/\\r?\\n/).filter(Boolean)
+  const events = (result.stdout || '').trim().split(/\r?\n/).filter(Boolean)
     .map(line => JSON.parse(line));
   const results = events.filter(event => event.event === 'result');
   assert.equal(results.length, 1, `Exactly one result for ${command}: ${result.stdout}; ${result.stderr}`);
@@ -86,7 +86,7 @@ try {
   };
   const draftPath = join(project, 'configurations', 'drafts', 'pipeline-technical.json');
   mkdirSync(join(project, 'configurations', 'drafts'), { recursive: true });
-  writeFileSync(draftPath, JSON.stringify(draft, null, 2) + '\\n');
+  writeFileSync(draftPath, JSON.stringify(draft, null, 2) + '\n');
   const registered = cli('register-pipeline', [
     '--project', project, '--definition', draftPath
   ]);
