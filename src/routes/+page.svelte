@@ -4,8 +4,8 @@
   import { listen } from '@tauri-apps/api/event';
   import {
     ApprovedDatasetMetadata, DatasetMetadataStatus, HandshakeResult,
-    ProgressEvent, RunResult, StagedDatasetMetadata, CreatedProject, ImportedResource,
-    type DatasetMetadata, type Progress, type RunSummary
+    ProgressEvent, RunResult, StagedDatasetMetadata, CreatedProject, ImportedResource, PipelineTemplate, SavedPipelineDraft, RegisteredPipeline, SelectedPipeline,
+    type DatasetMetadata, type Progress, type RunSummary, type PipelineTemplateInfo
   } from '$lib/engine-protocol';
 
   let project = $state('');
@@ -13,8 +13,23 @@
   let parentFolder = $state('');
   let folderName = $state('');
   let setupProject = $state('');
-  let setupFiles = $state<{ path: string; role: '' | 'events' | 'counts'; imported: boolean; checksum: string }[]>([]);
+  let setupFiles = $state<{ path: string; role: '' | 'events' | 'counts'; imported: boolean; checksum: string; resourceId: string }[]>([]);
   let setupMessage = $state('');
+  let pipelineTemplate = $state<PipelineTemplateInfo | null>(null);
+  let pipelineBindings = $state<Record<string, string>>({});
+  let pipelineFormats = $state<Record<string, 'csv' | 'parquet'>>({});
+  let pipelineSaved = $state(false);
+  let pipelineSha = $state('');
+  let selectedPipelineSha = $state('');
+  let pipelineBusy = $state(false);
+  let pipelineError = $state('');
+  let pipelineMessage = $state('');
+  let bindingsComplete = $derived(
+    !!pipelineTemplate && pipelineTemplate.inputs.every(input => {
+      const resource = setupFiles.find(file => file.resourceId === pipelineBindings[input.name]);
+      return !!resource?.imported && !!pipelineFormats[input.name];
+    })
+  );
   let setupBusy = $state(false);
   let setupError = $state('');
   const sourceFileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
@@ -78,7 +93,7 @@
       const paths = await invoke<string[]>('choose_source_files');
       for (const path of paths) {
         if (!setupFiles.some(file => file.path === path)) {
-          setupFiles = [...setupFiles, { path, role: '', imported: false, checksum: '' }];
+          setupFiles = [...setupFiles, { path, role: '', imported: false, checksum: '', resourceId: '' }];
         }
       }
     } catch (e) {
@@ -127,7 +142,7 @@
           role: file.role
         }));
         setupFiles = setupFiles.map(item => item.path === file.path
-          ? { ...item, imported: true, checksum: imported.sha256 }
+          ? { ...item, imported: true, checksum: imported.sha256, resourceId: imported.resource_id }
           : item);
       }
       setupMessage = 'Dateien unverändert importiert. Das Projekt kann jetzt konfiguriert werden.';
@@ -142,13 +157,104 @@
     setupFiles = setupFiles.filter(file => file.path !== path || file.imported);
   }
 
+  async function chooseTechnicalTemplate() {
+    if (!setupProject || !setupReady || busy || setupBusy || pipelineBusy) return;
+    pipelineBusy = true;
+    pipelineError = '';
+    pipelineMessage = '';
+    try {
+      const result = await invoke<unknown | null>('choose_pipeline_template');
+      if (result) {
+        const template = PipelineTemplate.parse(result);
+        pipelineTemplate = template;
+        pipelineBindings = {};
+        pipelineFormats = Object.fromEntries(
+          template.inputs.map(input => [input.name, input.format])
+        );
+        pipelineSaved = false;
+        pipelineSha = '';
+        selectedPipelineSha = '';
+      }
+    } catch (e) {
+      pipelineError = String(e);
+    } finally {
+      pipelineBusy = false;
+    }
+  }
+
+  function resetPipelineDraft() {
+    pipelineSaved = false;
+    pipelineSha = '';
+    selectedPipelineSha = '';
+    pipelineMessage = '';
+  }
+
+  async function saveTechnicalPipeline() {
+    if (!pipelineTemplate || !bindingsComplete || !setupProject || busy || setupBusy || pipelineBusy) return;
+    pipelineBusy = true;
+    pipelineError = '';
+    try {
+      const bindings = pipelineTemplate.inputs.map(input => ({
+        slot: input.name,
+        resource_id: pipelineBindings[input.name],
+        format: pipelineFormats[input.name]
+      }));
+      SavedPipelineDraft.parse(await invoke('save_project_pipeline_draft', {
+        project: setupProject,
+        template: pipelineTemplate.path,
+        bindings
+      }));
+      pipelineSaved = true;
+      pipelineMessage = 'Technische Pipeline-Konfiguration als bearbeitbarer Projekt-Draft gespeichert.';
+    } catch (e) {
+      pipelineError = String(e);
+    } finally {
+      pipelineBusy = false;
+    }
+  }
+
+  async function registerTechnicalPipeline() {
+    if (!pipelineSaved || !setupProject || busy || setupBusy || pipelineBusy) return;
+    pipelineBusy = true;
+    pipelineError = '';
+    try {
+      const registered = RegisteredPipeline.parse(await invoke('register_project_pipeline', {
+        project: setupProject
+      }));
+      pipelineSha = registered.pipeline_sha256;
+      pipelineMessage = 'Unveränderliche Pipeline-Revision registriert. Zur Ausführung noch explizit auswählen.';
+    } catch (e) {
+      pipelineError = String(e);
+    } finally {
+      pipelineBusy = false;
+    }
+  }
+
+  async function selectTechnicalPipeline() {
+    if (!pipelineSha || !setupProject || busy || setupBusy || pipelineBusy) return;
+    pipelineBusy = true;
+    pipelineError = '';
+    try {
+      const selected = SelectedPipeline.parse(await invoke('select_registered_pipeline', {
+        project: setupProject,
+        pipelineSha256: pipelineSha
+      }));
+      selectedPipelineSha = selected.active_pipeline_sha256;
+      pipelineMessage = 'Technische Pipeline aktiv. Ein RUN wird nicht automatisch gestartet.';
+    } catch (e) {
+      pipelineError = String(e);
+    } finally {
+      pipelineBusy = false;
+    }
+  }
+
   async function checkEngine() {
     busy = true;
     error = '';
     try {
       const response = HandshakeResult.parse(await invoke('engine_handshake'));
       for (const command of [
-        'init-project', 'import-resource', 'run-pipeline', 'show-dataset-metadata',
+        'init-project', 'import-resource', 'register-pipeline', 'select-pipeline', 'run-pipeline', 'show-dataset-metadata',
         'stage-dataset-metadata', 'approve-dataset-metadata'
       ]) {
         if (!response.commands.includes(command)) {
@@ -335,6 +441,54 @@
     {#if setupMessage}<p role="status">{setupMessage}</p>{/if}
     {#if setupError}<p role="alert" class="error">{setupError}</p>{/if}
   </section>
+
+  {#if setupReady}
+    <section aria-labelledby="pipeline-title">
+      <h2 id="pipeline-title">Technische Pipeline konfigurieren</h2>
+      <p class="note">Eine bestehende deklarative <code>fairmorph.pipeline/1</code>-JSON-Vorlage auswählen. Keine Feldzuordnung, wissenschaftliche Beschreibung oder automatische Interpretation. Jede Eingangsressource wird ausdrücklich mit einer importierten Datei verknüpft.</p>
+      <button onclick={chooseTechnicalTemplate} disabled={busy || setupBusy || pipelineBusy}>Pipeline-Vorlage auswählen (JSON)</button>
+      {#if pipelineTemplate}
+        <p><strong>Vorlage:</strong> <code>{pipelineTemplate.path}</code></p>
+        <p class="note">{pipelineTemplate.steps} Schritte · Ausgaben: {pipelineTemplate.outputs.join(', ')}</p>
+        {#each pipelineTemplate.inputs as input (input.name)}
+          <div class="source-row">
+            <div class="source-info"><strong>Eingang: {input.name}</strong><span class="note">Vorlagenformat: {input.format}</span></div>
+            <label>
+              <span>Importierte Datei</span>
+              <select value={pipelineBindings[input.name] ?? ''} disabled={pipelineBusy || !!selectedPipelineSha}
+                onchange={event => {
+                  pipelineBindings = { ...pipelineBindings, [input.name]: event.currentTarget.value };
+                  resetPipelineDraft();
+                }}>
+                <option value="">Bitte ausdrücklich zuordnen</option>
+                {#each setupFiles.filter(file => file.imported) as file (file.path)}
+                  <option value={file.resourceId}>{sourceFileName(file.path)} ({file.role})</option>
+                {/each}
+              </select>
+            </label>
+            <label>
+              <span>Quellformat</span>
+              <select value={pipelineFormats[input.name] ?? input.format} disabled={pipelineBusy || !!selectedPipelineSha}
+                onchange={event => {
+                  pipelineFormats = { ...pipelineFormats, [input.name]: event.currentTarget.value as 'csv' | 'parquet' };
+                  resetPipelineDraft();
+                }}>
+                <option value="csv">CSV</option>
+                <option value="parquet">Parquet</option>
+              </select>
+            </label>
+          </div>
+        {/each}
+        <button onclick={saveTechnicalPipeline} disabled={!bindingsComplete || pipelineBusy || busy || setupBusy || !!selectedPipelineSha}>1. Konfiguration speichern</button>
+        <button onclick={registerTechnicalPipeline} disabled={!pipelineSaved || pipelineBusy || busy || setupBusy || !!selectedPipelineSha}>2. Pipeline registrieren</button>
+        <button onclick={selectTechnicalPipeline} disabled={!pipelineSha || pipelineBusy || busy || setupBusy || !!selectedPipelineSha}>3. Pipeline auswählen</button>
+        {#if pipelineSha}<p class="note">Registrierte SHA-256: <code>{pipelineSha}</code></p>{/if}
+        {#if selectedPipelineSha}<p role="status">Pipeline ausgewählt. Der technische RUN kann unten separat gestartet werden.</p>{/if}
+      {/if}
+      {#if pipelineMessage}<p role="status">{pipelineMessage}</p>{/if}
+      {#if pipelineError}<p role="alert" class="error">{pipelineError}</p>{/if}
+    </section>
+  {/if}
 
   <section aria-labelledby="project-title">
     <h2 id="project-title">Projekt</h2>
