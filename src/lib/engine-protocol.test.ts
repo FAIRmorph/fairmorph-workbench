@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApprovedDatasetMetadata, DatasetMetadataStatus, CreatedProject, ImportedResource, EngineEvent, HandshakeResult, ProgressEvent, RunResult, StagedDatasetMetadata, parseEngineEvent } from './engine-protocol';
+import { ApprovedDatasetMetadata, DatasetMetadataStatus, CreatedProject, ImportedResource, PipelineTemplate, SavedPipelineDraft, RegisteredPipeline, SelectedPipeline, EngineEvent, HandshakeResult, ProgressEvent, RunResult, StagedDatasetMetadata, parseEngineEvent } from './engine-protocol';
 
 describe('Engine v0.13 RUN/2 boundary', () => {
   it('accepts Engine handshake and run support', () => {
@@ -89,5 +89,34 @@ describe('Project setup Engine result contracts', () => {
     expect(ImportedResource.parse(source).role).toBe('events');
     expect(ImportedResource.safeParse({ ...source, role: 'unknown' }).success).toBe(false);
     expect(ImportedResource.safeParse({ ...source, sha256: 'broken' }).success).toBe(false);
+  });
+});
+
+describe('technical pipeline setup protocol', () => {
+  const sha = 'b'.repeat(64);
+  const project_id = '12345678-1234-4234-8234-123456789abc';
+
+  it('accepts explicit technical input slots, pipeline outputs and step count', () => {
+    expect(PipelineTemplate.parse({
+      path: '/tmp/template.json',
+      inputs: [{name: 'survey', format: 'csv'}, {name: 'counts', format: 'parquet'}],
+      outputs: ['normalized'], steps: 2
+    }).inputs).toHaveLength(2);
+  });
+  it('rejects missing inputs, malformed formats and unpopulated templates', () => {
+    const template = {
+      path: '/tmp/template.json',
+      inputs: [{name: 'events', format: 'csv'}], outputs: ['out'], steps: 1
+    };
+    expect(PipelineTemplate.safeParse({...template, inputs: []}).success).toBe(false);
+    expect(PipelineTemplate.safeParse({...template, inputs: [{name: 'events', format: 'json'}]}).success).toBe(false);
+    expect(PipelineTemplate.safeParse({...template, steps: 0}).success).toBe(false);
+  });
+  it('requires real Engine registration and selection identities', () => {
+    expect(SavedPipelineDraft.parse({path: '/tmp/project/configurations/drafts/pipeline-technical.json', inputs: 2}).inputs).toBe(2);
+    expect(RegisteredPipeline.parse({pipeline_sha256: sha}).pipeline_sha256).toBe(sha);
+    expect(SelectedPipeline.parse({project_id, active_pipeline_sha256: sha}).active_pipeline_sha256).toBe(sha);
+    expect(RegisteredPipeline.safeParse({pipeline_sha256: '123'}).success).toBe(false);
+    expect(SelectedPipeline.safeParse({project_id, active_pipeline_sha256: 'not-a-sha'}).success).toBe(false);
   });
 });
