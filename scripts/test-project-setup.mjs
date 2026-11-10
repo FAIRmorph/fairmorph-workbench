@@ -65,7 +65,7 @@ try {
   ]);
   assert.equal(duplicate.resource_id, imported.events.resource_id);
   const stored = readdirSync(join(project, 'objects', 'sha256'), { recursive: true })
-    .filter(name => /^[a-f0-9]{64}$/.test(String(name)));
+    .filter(name => /^[a-f0-9]{64}$/.test(String(name).split('/').at(-1)));
   assert.equal(stored.length, 2);
 
   // The Workbench only fills the explicitly selected source bindings.
