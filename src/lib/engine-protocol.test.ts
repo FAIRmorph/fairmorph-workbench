@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EngineEvent, HandshakeResult, ProgressEvent, RunResult, parseEngineEvent } from './engine-protocol';
+import { ApprovedDatasetMetadata, DatasetMetadataStatus, EngineEvent, HandshakeResult, ProgressEvent, RunResult, StagedDatasetMetadata, parseEngineEvent } from './engine-protocol';
 
 describe('Engine v0.13 RUN/2 boundary', () => {
   it('accepts Engine handshake and run support', () => {
@@ -49,5 +49,27 @@ describe('Engine v0.13 RUN/2 boundary', () => {
     expect(() => parseEngineEvent('{invalid')).toThrow();
     expect(parseEngineEvent({event: 'result', status: 'error', message: 'Unapproved pipeline'}))
       .toMatchObject({status: 'error'});
+  });
+});
+
+describe('Project-file dataset metadata revision responses', () => {
+  const sha = 'a'.repeat(64);
+  it('accepts unconfigured and explicitly approved metadata', () => {
+    expect(DatasetMetadataStatus.parse({
+      status: 'unconfigured', title: null, revision_sha256: null
+    }).status).toBe('unconfigured');
+    expect(DatasetMetadataStatus.parse({
+      status: 'approved', title: 'Confirmed scientific title',
+      revision_sha256: sha, confirmed_by: 'curator', confirmed_at: '2026-11-10T12:00:00Z'
+    }).status).toBe('approved');
+  });
+  it('rejects malformed staged SHA and missing approving user', () => {
+    expect(StagedDatasetMetadata.safeParse({
+      status: 'staged', revision_sha256: 'bad', title: 'A title'
+    }).success).toBe(false);
+    expect(ApprovedDatasetMetadata.safeParse({
+      status: 'approved', revision_sha256: sha, title: 'A title',
+      confirmed_by: '', confirmed_at: '2026-11-10'
+    }).success).toBe(false);
   });
 });
