@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canInitializeProject, importsReady, pipelineBindingsComplete,
-  sourceFileName, type SourceFile
+  runButtonReady, sourceFileName, type SourceFile
 } from './project-setup';
 
 const raw: SourceFile = {
@@ -59,6 +59,17 @@ describe('Svelte project setup readiness', () => {
       selected, { observations: 'csv' })).toBe(false);
     expect(pipelineBindingsComplete([], [importedEvents], selected, formats)).toBe(false);
     expect(pipelineBindingsComplete(undefined, [importedEvents], selected, formats)).toBe(false);
+  });
+
+  it('keeps RUN disabled until the current project has an explicitly selected pipeline', () => {
+    const project = '/tmp/study.fairmorph';
+    const sha = 'a'.repeat(64);
+    expect(runButtonReady(project, project, '')).toBe(false);
+    expect(runButtonReady(project, project, 'invalid')).toBe(false);
+    expect(runButtonReady(project, project, sha)).toBe(true);
+    expect(runButtonReady('/tmp/another.fairmorph', project, sha)).toBe(false);
+    expect(runButtonReady(project, '', sha)).toBe(false);
+    expect(runButtonReady(project, project, 'A'.repeat(64))).toBe(false);
   });
 
   it('extracts filenames from Windows and POSIX paths without touching input bytes', () => {
