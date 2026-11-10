@@ -11,12 +11,12 @@
 5. **Dateien auswählen** öffnet den nativen Dateiauswahldialog. Jede Originaldatei wird einzeln aufgeführt.
 6. **Für jede Datei ausdrücklich eine technische Rolle wählen:** `events` oder `counts`. Es gibt **keine Voreinstellung** und keine Heuristik über Namen, CSV-Inhalt oder Dateiendung.
 7. **Originaldateien importieren** ruft je gewählter Datei `import-resource --project <pfad> --source <originalpfad> --role <rolle>` auf. Die Workbench zeigt die SHA-256 aus der Engine-Antwort an.
-8. Das Projekt ist jetzt in der bestehenden Ansicht geöffnet und kann **anschließend** konfiguriert werden.
+8. **Pipeline-Vorlage auswählen (JSON):** Eine bestehende technische `fairmorph.pipeline/1`-Vorlage mit `resources`, `steps` und `outputs` auswählen. Entity- und Profil-Konfigurationen sind im MVP nicht zugelassen.\n9. Jede deklarierte Input-Ressource explizit einer bereits importierten Datei zuordnen und deren vorhandenes Eingabeformat (`csv` oder `parquet`) prüfen. Wissenschaftliche Feldzuordnungen werden hier **nicht** erzeugt.\n10. **Konfiguration speichern** schreibt ausschließlich `configurations/drafts/pipeline-technical.json` im Projekt; die Vorlagen-Schritte bleiben unverändert.\n11. **Pipeline registrieren** ruft die bestehende Engine-CLI `register-pipeline` auf. Die Engine erzeugt einen inhaltsadressierten SHA-256-Pin.\n12. **Pipeline auswählen** ruft `select-pipeline` auf. Erst dann kann der vorhandene RUN-Bereich den technischen RUN starten. Es gibt keinen automatischen RUN.
 
 ## Grenzen des ersten vertikalen Schnitts
 
 - Nur `events` und `counts` sind vorerst als **technische Ressourcenrollen** auswählbar. Sie sind keine bestätigten FAIRmorph-Entities und keine fachliche Freigabe. Die Rollenliste muss später unabhängig vom Datensatz erweiterbar werden.
-- Kein automatisch erzeugtes Mapping, keine Pipeline-Generierung, keine wissenschaftlichen Schema-/Metadata-Approvals.
+- Kein automatisch erzeugtes Mapping, keine Operator- oder Pipeline-Generierung, keine wissenschaftlichen Schema-/Metadata-Approvals. Ausschließlich eine vom Nutzer ausgewählte vorhandene technische DAG-Vorlage und explizite Input-Bindungen.\n- Eine fremde Vorlagendatei wird nicht ausgeführt: Workbench schreibt deklarative Projekt-JSON-Drafts und die **Engine validiert** die registrierte Pipeline. Inkompatible wissenschaftliche Vorlagen werden im MVP zurückgewiesen.
 - **Kein automatischer RUN nach Import.** Eine vorher registrierte und explizit ausgewählte Pipeline bleibt Voraussetzung für `run-pipeline`. Das RUN-Feature der bestehenden Workbench bleibt unverändert.
 - Der Projektordner darf an einem frei gewählten lokalen absoluten Pfad liegen. Ziel darf nicht bereits existieren. Elternordner muss existieren. Keine Löschung oder Überschreibung bestehender Projekte.
 - Bei Fehlern während mehrerer Importe bleiben bereits erfolgreich registrierte Ressourcen erhalten; die UI markiert sie und erlaubt das erneute Importieren der noch offenen Dateien.
@@ -32,6 +32,6 @@
 5. Mit `fairmorph-engine verify-project --project <pfad>` die Integrität prüfen.
 6. Überprüfen, dass die Originaldateien unverändert sind und das Projekt keinen Python-Code enthält.
 7. Bei Auswahl eines existierenden Zielverzeichnisses oder einer fehlenden Quelle erscheint ein Fehler ohne Überschreiben.
-8. Der RUN-Bereich startet **ohne registrierte Pipeline** keinen erfolgreichen RUN. Später wird eine Pipeline separat konfiguriert und ausgewählt.
+8. Ohne Pipeline-Vorlage oder ohne vollständige Import-Zuordnung bleibt die Pipeline-Registrierung deaktiviert.\n9. Eine technische DAG-Vorlage wird mit unveränderten Schritten übernommen; die Eingangsressourcen werden explizit gebunden, die Engine registriert und wählt sie aus.\n10. Der RUN-Bereich startet **ohne registrierte und ausgewählte Pipeline** keinen erfolgreichen RUN. Ein RUN wird nie implizit beim Import oder bei der Auswahl gestartet.
 
 **P0.6-Grenze:** Initialisierung und Ressourcenimport können unabhängig von einer fachlichen RUN-Abnahme geprüft werden; das ist keine Aussage über wissenschaftliche Konformität.
