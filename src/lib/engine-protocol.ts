@@ -23,6 +23,30 @@ export const HandshakeResult = z.object({
   engine_version: z.string().min(1),
   commands: z.array(z.string())
 });
+export const DatasetMetadataStatus = z.union([
+  z.object({ status: z.literal('unconfigured'), revision_sha256: z.null(), title: z.null() }),
+  z.object({
+    status: z.literal('approved'),
+    revision_sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    title: z.string().min(5),
+    confirmed_by: z.string().min(1),
+    confirmed_at: z.string().min(1)
+  })
+]);
+export const StagedDatasetMetadata = z.object({
+  status: z.literal('staged'),
+  revision_sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  title: z.string().min(5)
+});
+export const ApprovedDatasetMetadata = z.object({
+  status: z.literal('approved'),
+  revision_sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  title: z.string().min(5),
+  confirmed_by: z.string().min(1),
+  confirmed_at: z.string().min(1)
+});
+export type DatasetMetadata = z.infer<typeof DatasetMetadataStatus>;
+
 export const ErrorEvent = z.object({
   event: z.literal('result'),
   status: z.literal('error'),
