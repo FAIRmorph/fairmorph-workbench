@@ -148,7 +148,7 @@
     try {
       const response = HandshakeResult.parse(await invoke('engine_handshake'));
       for (const command of [
-        'run-pipeline', 'show-dataset-metadata',
+        'init-project', 'import-resource', 'run-pipeline', 'show-dataset-metadata',
         'stage-dataset-metadata', 'approve-dataset-metadata'
       ]) {
         if (!response.commands.includes(command)) {
