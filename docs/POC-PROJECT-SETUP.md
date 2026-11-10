@@ -35,3 +35,13 @@
 8. Ohne Pipeline-Vorlage oder ohne vollständige Import-Zuordnung bleibt die Pipeline-Registrierung deaktiviert.\n9. Eine technische DAG-Vorlage wird mit unveränderten Schritten übernommen; die Eingangsressourcen werden explizit gebunden, die Engine registriert und wählt sie aus.\n10. Der RUN-Bereich startet **ohne registrierte und ausgewählte Pipeline** keinen erfolgreichen RUN. Ein RUN wird nie implizit beim Import oder bei der Auswahl gestartet.
 
 **P0.6-Grenze:** Initialisierung und Ressourcenimport können unabhängig von einer fachlichen RUN-Abnahme geprüft werden; das ist keine Aussage über wissenschaftliche Konformität.
+
+## Automatisierte Regressionstests
+
+- `pnpm check`: Svelte-/TypeScript-Build und Typverträge.
+- `pnpm test:frontend`: Protokollprüfung sowie reine Svelte-Setup-Zustandsregeln (Pfad, explizite Dateitypen, unterbrochener Import, vollständige Pipeline-Bindungen).
+- `cargo test --manifest-path src-tauri/Cargo.toml`: Rust-Pfade, erlaubte Rollen, deklarative Vorlagen, Duplicate-/Unknown-Bindings, symlink-sichere Originalquellen sowie unveränderte registrierte Konfigurationen.
+- `node scripts/test-project-setup.mjs` (mit installierter Engine und `FAIRMORPH_ENGINE_PYTHON`): Echter CLI-Vertrag `init-project → import-resource → register-pipeline → select-pipeline → verify-project`, SHA-256, Inhaltstreue, deduplizierte Quellobjekte, keine impliziten RUNs. Die Eingabe besteht ausschließlich aus synthetischen CSVs außerhalb des neuen Projekts.
+- GitHub Actions `.github/workflows/project-setup-integration.yml` installiert eine festgelegte Engine-v0.13-Revision und führt den synthetischen Integrationstest separat aus.
+
+**Nicht automatisiert:** Das native Datei-/Ordner-Picker-Verhalten und die vollständige Interaktion im tatsächlich gestarteten Tauri-Fenster erfordern weiterhin eine manuelle PoC-Abnahme auf dem Zielbetriebssystem. Ein technisch grüner CI-Status ersetzt diese Abnahme nicht.
