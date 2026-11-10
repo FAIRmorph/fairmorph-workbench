@@ -4,11 +4,26 @@
   import { listen } from '@tauri-apps/api/event';
   import {
     ApprovedDatasetMetadata, DatasetMetadataStatus, HandshakeResult,
-    ProgressEvent, RunResult, StagedDatasetMetadata,
+    ProgressEvent, RunResult, StagedDatasetMetadata, CreatedProject, ImportedResource,
     type DatasetMetadata, type Progress, type RunSummary
   } from '$lib/engine-protocol';
 
   let project = $state('');
+  let newName = $state('');
+  let parentFolder = $state('');
+  let folderName = $state('');
+  let setupProject = $state('');
+  let setupFiles = $state<{ path: string; role: '' | 'events' | 'counts'; imported: boolean; checksum: string }[]>([]);
+  let setupMessage = $state('');
+  let setupBusy = $state(false);
+  let setupError = $state('');
+  const sourceFileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
+  let setupReady = $derived(!!setupProject && setupFiles.some(file => file.imported));
+  let canInitialize = $derived(
+    !!newName.trim() && !!parentFolder.trim() && !!folderName.trim()
+    && folderName !== '.' && folderName !== '..'
+    && !/[\\/]/.test(folderName)
+  );
   let busy = $state(false);
   let engineVersion = $state('');
   let error = $state('');
@@ -44,6 +59,88 @@
     }).catch(e => error = String(e));
     return () => { disposed = true; unsubscribe?.(); };
   });
+
+  async function chooseParent() {
+    if (busy || setupBusy) return;
+    setupError = '';
+    try {
+      const selected = await invoke<string | null>('choose_project_parent');
+      if (selected) parentFolder = selected;
+    } catch (e) {
+      setupError = String(e);
+    }
+  }
+
+  async function addSources() {
+    if (!setupProject || setupBusy || busy) return;
+    setupError = '';
+    try {
+      const paths = await invoke<string[]>('choose_source_files');
+      for (const path of paths) {
+        if (!setupFiles.some(file => file.path === path)) {
+          setupFiles = [...setupFiles, { path, role: '', imported: false, checksum: '' }];
+        }
+      }
+    } catch (e) {
+      setupError = String(e);
+    }
+  }
+
+  async function initializeNewProject() {
+    if (!canInitialize || busy || setupBusy || setupProject) return;
+    setupBusy = true;
+    setupError = '';
+    setupMessage = '';
+    const folder = parentFolder.replace(/[\\/]$/, '');
+    const target = folder + (folder.endsWith(':') ? '/' : '/') + folderName.trim();
+    try {
+      const created = CreatedProject.parse(await invoke('create_project', {
+        project: target,
+        name: newName.trim()
+      }));
+      setupProject = created.project_path;
+      project = created.project_path;
+      invalidateEditor();
+      setupMessage = 'Projekt angelegt. Bitte Originaldateien auswählen und deren Rollen festlegen.';
+    } catch (e) {
+      setupError = String(e);
+    } finally {
+      setupBusy = false;
+    }
+  }
+
+  async function importSources() {
+    if (!setupProject || busy || setupBusy) return;
+    const pending = setupFiles.filter(file => !file.imported);
+    if (!pending.length || pending.some(file => !file.role)) {
+      setupError = 'Jeder noch nicht importierten Datei muss explizit events oder counts zugeordnet werden.';
+      return;
+    }
+    setupBusy = true;
+    setupError = '';
+    setupMessage = '';
+    try {
+      for (const file of pending) {
+        const imported = ImportedResource.parse(await invoke('import_project_source', {
+          project: setupProject,
+          source: file.path,
+          role: file.role
+        }));
+        setupFiles = setupFiles.map(item => item.path === file.path
+          ? { ...item, imported: true, checksum: imported.sha256 }
+          : item);
+      }
+      setupMessage = 'Dateien unverändert importiert. Das Projekt kann jetzt konfiguriert werden.';
+    } catch (e) {
+      setupError = String(e) + ' Erfolgreiche Importe bleiben registriert; fehlgeschlagene Dateien können erneut importiert werden.';
+    } finally {
+      setupBusy = false;
+    }
+  }
+
+  function removePendingSource(path: string) {
+    setupFiles = setupFiles.filter(file => file.path !== path || file.imported);
+  }
 
   async function checkEngine() {
     busy = true;
@@ -182,6 +279,63 @@
     {#if engineVersion}<p>Engine-Version: <code>{engineVersion}</code></p>{/if}
   </section>
 
+  <section aria-labelledby="setup-title">
+    <h2 id="setup-title">Neues Projekt · Einrichtung</h2>
+    <p class="note">Vorhandene FAIRmorph-Engine: Projekt initialisieren, Originaldateien importieren und technische Rollen ausdrücklich zuweisen. Keine automatische wissenschaftliche Freigabe.</p>
+    <label for="setup-name">Projektname</label>
+    <input id="setup-name" bind:value={newName} disabled={setupBusy || !!setupProject} placeholder="Mein Forschungsprojekt" />
+    <label for="setup-parent">Übergeordnetes Verzeichnis</label>
+    <div class="setup-inline">
+      <input id="setup-parent" bind:value={parentFolder} disabled={setupBusy || !!setupProject} placeholder="Absoluter Pfad zum Speicherort" />
+      <button onclick={chooseParent} disabled={setupBusy || !!setupProject || busy}>Ordner auswählen</button>
+    </div>
+    <label for="setup-folder">Name des neuen Projektordners</label>
+    <input id="setup-folder" bind:value={folderName} disabled={setupBusy || !!setupProject} placeholder="MeinProjekt.fairmorph" />
+    <button onclick={initializeNewProject} disabled={!canInitialize || setupBusy || !!setupProject || busy}>
+      {setupBusy ? 'Engine arbeitet …' : 'Projekt anlegen'}
+    </button>
+    {#if setupProject}
+      <p role="status"><strong>Projekt angelegt:</strong> <code>{setupProject}</code></p>
+      <h3>Originaldateien und Ressourcenrollen</h3>
+      <p class="note">Jede Originaldatei braucht eine ausdrücklich gewählte Rolle. Die Rollen <code>events</code> und <code>counts</code> sind zunächst technische Ressourcenbezeichnungen, keine bestätigte wissenschaftliche Entity-Zuordnung.</p>
+      <button onclick={addSources} disabled={setupBusy || busy}>Dateien auswählen</button>
+      {#each setupFiles as file (file.path)}
+        <div class="source-row">
+          <div class="source-info">
+            <strong>{sourceFileName(file.path)}</strong>
+            <span class="note">{file.path}</span>
+            {#if file.imported}
+              <span class="note">Importiert · SHA-256: <code>{file.checksum}</code></span>
+            {/if}
+          </div>
+          <label>
+            <span>Rolle</span>
+            <select disabled={file.imported || setupBusy} value={file.role}
+              onchange={(event) => {
+                const role = event.currentTarget.value as '' | 'events' | 'counts';
+                setupFiles = setupFiles.map(item => item.path === file.path ? { ...item, role } : item);
+              }}>
+              <option value="">Bitte wählen</option>
+              <option value="events">events – Ereignisse</option>
+              <option value="counts">counts – Zählungen</option>
+            </select>
+          </label>
+          {#if !file.imported}
+            <button onclick={() => removePendingSource(file.path)} disabled={setupBusy}>Entfernen</button>
+          {/if}
+        </div>
+      {/each}
+      <button onclick={importSources} disabled={setupBusy || busy || !setupFiles.some(file => !file.imported) || setupFiles.some(file => !file.imported && !file.role)}>
+        Originaldateien importieren
+      </button>
+      {#if setupReady}
+        <p class="note">Das Projekt ist initialisiert und enthält importierte Ressourcen. Für RUN/2 muss anschließend eine deklarative Pipeline registriert und ausgewählt werden. Der vorhandene RUN-Bereich bleibt dafür bestehen.</p>
+      {/if}
+    {/if}
+    {#if setupMessage}<p role="status">{setupMessage}</p>{/if}
+    {#if setupError}<p role="alert" class="error">{setupError}</p>{/if}
+  </section>
+
   <section aria-labelledby="project-title">
     <h2 id="project-title">Projekt</h2>
     <label for="project">Projektverzeichnis</label>
@@ -258,4 +412,10 @@
   table { width: 100%; border-collapse: collapse; text-align: left; }
   th, td { border-bottom: 1px solid #cbd5e1; padding: .5rem; }
   code { overflow-wrap: anywhere; }
+  .setup-inline { display: flex; align-items: start; gap: .5rem; flex-wrap: wrap; }
+  .setup-inline input { flex: 1; min-width: 250px; }
+  .source-row { border-top: 1px solid #cbd5e1; padding: .8rem 0; display: flex; align-items: end; gap: .7rem; flex-wrap: wrap; }
+  .source-info { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: .3rem; overflow-wrap: anywhere; }
+  .source-row label { min-width: 160px; }
+  select { display: block; width: 100%; padding: .6rem; margin-top: .3rem; }
 </style>
