@@ -653,6 +653,36 @@ mod tests {
     }
 
     #[test]
+    fn existing_project_folder_requires_regular_project_descriptor() {
+        use super::validate_project;
+        let dir = std::env::temp_dir().join(format!(
+            "fairmorph-project-picker-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        assert!(validate_project(dir.to_str().unwrap()).is_err());
+        let descriptor = dir.join("project.json");
+        std::fs::write(&descriptor, b"{}").unwrap();
+        assert_eq!(
+            validate_project(dir.to_str().unwrap()).unwrap(),
+            dir.canonicalize().unwrap()
+        );
+        std::fs::remove_file(&descriptor).unwrap();
+        std::fs::create_dir(&descriptor).unwrap();
+        assert!(validate_project(dir.to_str().unwrap()).is_err());
+        std::fs::remove_dir(&descriptor).unwrap();
+        #[cfg(unix)]
+        {
+            let other = dir.join("other.json");
+            std::fs::write(&other, b"{}").unwrap();
+            std::os::unix::fs::symlink(&other, &descriptor).unwrap();
+            assert!(validate_project(dir.to_str().unwrap()).is_err());
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn rejects_symlink_source_and_does_not_modify_existing_project() {
         let dir = std::env::temp_dir().join(format!(
             "fairmorph-source-{}-{}", std::process::id(),
