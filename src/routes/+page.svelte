@@ -25,8 +25,6 @@
   let resourceProject = $state('');
   let projectResources = $state<ExistingProjectResource[]>([]);
   let resourcesBusy = $state(false);
-  let resourceClickCount = $state(0);
-  let resourceClickStatus = $state('');
   let resourcesMessage = $state('');
   let resourcesError = $state('');
   let canConfigurePipeline = $derived(!!project.trim() && project.trim() === resourceProject && projectResources.length > 0);
@@ -98,8 +96,6 @@
   });
 
   async function loadExistingResources() {
-    resourceClickCount += 1;
-    resourceClickStatus = 'Klick ' + resourceClickCount + ' erkannt – prüfe Projekt und Tauri-Aufruf.';
     const target = project.trim();
     if (!target) {
       resourcesError = 'Bitte zuerst einen Projektordner auswählen oder einen Projektpfad eintragen.';
@@ -111,7 +107,6 @@
     }
     resourcesBusy = true;
     invalidatePipeline();
-    resourceClickStatus = 'Klick ' + resourceClickCount + ' erkannt – Tauri-Ressourcenabfrage läuft.';
     error = '';
     resourcesMessage = 'Importierte Projektressourcen werden eingelesen …';
     try {
@@ -120,8 +115,6 @@
         projectResources = result.resources;
         resourceProject = target;
         const count = result.resources.length;
-        resourceClickStatus = 'Klick ' + resourceClickCount + ': Tauri erfolgreich; ' + count
-          + ' Importressource(n) gefunden; Projektpfad stimmt überein.';
         resourcesMessage = count > 0
           ? count + ' importierte Ressource(n) geladen. Die technische Pipeline kann konfiguriert werden.'
           : 'Das Projekt wurde gelesen, enthält aber noch keine importierten Ressourcen.';
@@ -130,7 +123,6 @@
       if (project.trim() === target) {
         resourcesMessage = '';
         resourcesError = 'Projektressourcen konnten nicht geladen werden: ' + String(e);
-        resourceClickStatus = 'Klick ' + resourceClickCount + ' erreichte Tauri nicht erfolgreich.';
       }
     } finally {
       resourcesBusy = false;
@@ -569,14 +561,8 @@
     <button type="button" onclick={loadExistingResources} disabled={resourcesBusy}>
       {resourcesBusy ? 'Ressourcen werden geladen …' : 'Projektressourcen laden'}
     </button>
-    <div role="status" aria-live="polite">
-      <p class="note">Diagnose (PR #9): {resourceClickStatus || 'Noch kein Klick registriert.'}</p>
-      <p class="note">Ressourcen im UI: <strong>{projectResources.length}</strong> ·
-        für aktuelles Projekt: <strong>{resourceProject === project.trim() && !!project.trim() ? 'ja' : 'nein'}</strong> ·
-        Pipeline-Editor: <strong>{canConfigurePipeline ? 'sichtbar' : 'ausgeblendet'}</strong></p>
-      {#if resourcesMessage}<p>{resourcesMessage}</p>{/if}
-      {#if resourcesError}<p role="alert" class="error">{resourcesError}</p>{/if}
-    </div>
+    {#if resourcesMessage}<p role="status">{resourcesMessage}</p>{/if}
+    {#if resourcesError}<p role="alert" class="error">{resourcesError}</p>{/if}
     {#if busy || setupBusy || pipelineBusy || verificationBusy}
       <p class="note" role="status">Während einer anderen Engine-Aktion ist das Laden von Projektressourcen nicht möglich.</p>
     {/if}
