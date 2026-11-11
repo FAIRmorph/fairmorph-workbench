@@ -523,6 +523,30 @@
     {#if setupError}<p role="alert" class="error">{setupError}</p>{/if}
   </section>
 
+  <section aria-labelledby="project-title">
+    <h2 id="project-title">Projekt</h2>
+    <label for="project">Projektverzeichnis</label>
+    <div class="setup-inline">
+      <input id="project" type="text" bind:value={project}
+        disabled={busy || setupBusy || pipelineBusy || verificationBusy || resourcesBusy}
+        oninput={() => { invalidateEditor(); invalidatePipeline(); run = null; progress = null; }}
+        placeholder="/pfad/zum/fairmorph-projekt" autocomplete="off" />
+      <button onclick={chooseExistingProject}
+        disabled={busy || setupBusy || pipelineBusy || verificationBusy || resourcesBusy}>Projektordner auswählen</button>
+    </div>
+    <p class="note">Bestehenden Projektordner mit <code>project.json</code> auswählen oder den Pfad manuell eingeben. Nur der Projektpfad wird an den Engine-Prozess übergeben. Fachliche Werte
+      werden ausschließlich in Projektdateien gespeichert und von der Engine selbst gelesen.</p>
+    <button onclick={loadExistingResources} disabled={!project.trim() || busy || setupBusy || pipelineBusy || verificationBusy || resourcesBusy}>
+      {resourcesBusy ? 'Ressourcen werden geladen …' : 'Projektressourcen laden'}
+    </button>
+    {#if canConfigurePipeline}
+      <p role="status">{projectResources.length} importierte Ressourcen verfügbar. Eine neue technische Pipeline kann im folgenden Abschnitt konfiguriert werden.</p>
+    {:else}
+      <p class="note">Nach der Projektauswahl werden importierte Ressourcen geladen. Bei manueller Pfadeingabe bitte „Projektressourcen laden“ wählen.</p>
+    {/if}
+    <button onclick={loadDataset} disabled={busy || !project.trim()}>Projektmetadaten laden</button>
+  </section>
+
   {#if canConfigurePipeline}
     <section aria-labelledby="pipeline-title">
       <h2 id="pipeline-title">Technische Pipeline konfigurieren</h2>
@@ -570,30 +594,6 @@
       {#if pipelineError}<p role="alert" class="error">{pipelineError}</p>{/if}
     </section>
   {/if}
-
-  <section aria-labelledby="project-title">
-    <h2 id="project-title">Projekt</h2>
-    <label for="project">Projektverzeichnis</label>
-    <div class="setup-inline">
-      <input id="project" type="text" bind:value={project}
-        disabled={busy || setupBusy || pipelineBusy || verificationBusy || resourcesBusy}
-        oninput={() => { invalidateEditor(); invalidatePipeline(); run = null; progress = null; }}
-        placeholder="/pfad/zum/fairmorph-projekt" autocomplete="off" />
-      <button onclick={chooseExistingProject}
-        disabled={busy || setupBusy || pipelineBusy || verificationBusy || resourcesBusy}>Projektordner auswählen</button>
-    </div>
-    <p class="note">Bestehenden Projektordner mit <code>project.json</code> auswählen oder den Pfad manuell eingeben. Nur der Projektpfad wird an den Engine-Prozess übergeben. Fachliche Werte
-      werden ausschließlich in Projektdateien gespeichert und von der Engine selbst gelesen.</p>
-    <button onclick={loadExistingResources} disabled={!project.trim() || busy || setupBusy || pipelineBusy || verificationBusy || resourcesBusy}>
-      {resourcesBusy ? 'Ressourcen werden geladen …' : 'Projektressourcen laden'}
-    </button>
-    {#if canConfigurePipeline}
-      <p role="status">{projectResources.length} importierte Ressourcen verfügbar. Eine neue technische Pipeline kann oben konfiguriert werden.</p>
-    {:else}
-      <p class="note">Nach der Projektauswahl werden importierte Ressourcen geladen. Bei manueller Pfadeingabe bitte „Projektressourcen laden“ wählen.</p>
-    {/if}
-    <button onclick={loadDataset} disabled={busy || !project.trim()}>Projektmetadaten laden</button>
-  </section>
 
   <section aria-labelledby="metadata-title">
     <h2 id="metadata-title">Datensatztitel · neue Revision</h2>
