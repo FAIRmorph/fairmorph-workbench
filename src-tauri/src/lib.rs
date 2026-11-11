@@ -16,6 +16,7 @@ pub fn run() {
             engine::register_project_pipeline,
             engine::select_registered_pipeline,
             engine::run_project,
+            engine::verify_project,
             engine::dataset_metadata_status,
             engine::save_dataset_metadata_draft,
             engine::stage_dataset_metadata,
