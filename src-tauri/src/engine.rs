@@ -215,6 +215,68 @@ pub async fn choose_existing_project(app: AppHandle) -> Result<Option<String>, S
     }).await.map_err(|e| e.to_string())?
 }
 
+/// Read Engine-created import manifests. Resource IDs follow the Engine's
+/// immutable import identity: resource-{role}-{source_sha256}.
+fn project_imported_resources(project: &Path) -> Result<Value, String> {
+    let imports = project.join("imports");
+    if !imports.is_dir() || imports.is_symlink() {
+        return Err("Project has no regular imports directory".into());
+    }
+    let mut resources = Vec::new();
+    for item in fs::read_dir(&imports).map_err(|e| e.to_string())? {
+        let item = item.map_err(|e| e.to_string())?;
+        let directory = item.path();
+        if item.file_type().map_err(|e| e.to_string())?.is_symlink() || !directory.is_dir() {
+            return Err("Unsafe import record directory".into());
+        }
+        let manifest_path = directory.join("manifest.json");
+        if manifest_path.is_symlink() || !manifest_path.is_file() {
+            return Err("Missing regular import manifest".into());
+        }
+        let manifest: Value = serde_json::from_slice(
+            &fs::read(&manifest_path).map_err(|e| e.to_string())?
+        ).map_err(|e| format!("Invalid import manifest: {e}"))?;
+        if manifest.get("schema_version").and_then(Value::as_str) != Some("fairmorph.poc.import/1") {
+            return Err("Unsupported import manifest schema".into());
+        }
+        let id = manifest.get("import_id").and_then(Value::as_str)
+            .ok_or("Missing import identity")?;
+        let sha = manifest.get("sha256").and_then(Value::as_str)
+            .ok_or("Missing source checksum")?;
+        let role = manifest.get("role").and_then(Value::as_str)
+            .ok_or("Missing import role")?;
+        let name = manifest.get("original_name").and_then(Value::as_str)
+            .ok_or("Missing original filename")?;
+        if !role.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.'))
+            || role.is_empty() || id != format!("{role}-{sha}")
+            || sha.len() != 64 || !sha.bytes().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+            || name.is_empty() || item.file_name().to_string_lossy() != id
+            || manifest.get("object_path").and_then(Value::as_str)
+                != Some(format!("objects/sha256/{}/{}", &sha[..2], sha).as_str()) {
+            return Err("Inconsistent import manifest identity".into());
+        }
+        let object = project.join("objects/sha256").join(&sha[..2]).join(sha);
+        if object.is_symlink() || !object.is_file() {
+            return Err("Imported source object missing or unsafe".into());
+        }
+        resources.push(json!({
+            "resource_id": format!("resource-{id}"),
+            "original_name": name,
+            "role": role,
+            "sha256": sha
+        }));
+    }
+    resources.sort_by(|a, b| a["resource_id"].as_str().cmp(&b["resource_id"].as_str()));
+    Ok(json!({"resources": resources}))
+}
+
+#[tauri::command]
+pub async fn list_project_resources(project: String) -> Result<Value, String> {
+    let project = validate_project(&project)?;
+    tauri::async_runtime::spawn_blocking(move || project_imported_resources(&project))
+        .await.map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn choose_source_files(app: AppHandle) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
