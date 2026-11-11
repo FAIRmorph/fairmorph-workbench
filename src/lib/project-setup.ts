@@ -27,7 +27,7 @@ export function importsReady(files: SourceFile[]): boolean {
 
 export function pipelineBindingsComplete(
   inputs: PipelineInput[] | undefined,
-  files: SourceFile[],
+  files: Pick<SourceFile, 'resourceId' | 'imported'>[],
   bindings: Record<string, string>,
   formats: Record<string, 'csv' | 'parquet'>
 ): boolean {

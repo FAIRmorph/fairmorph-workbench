@@ -69,6 +69,16 @@ export const CreatedProject = z.object({
   project_id: z.string().uuid(),
   project_path: z.string().min(1)
 });
+export const ExistingProjectResources = z.object({
+  resources: z.array(z.object({
+    resource_id: z.string().min(1),
+    original_name: z.string().min(1),
+    role: z.string().min(1),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/)
+  }))
+});
+export type ExistingProjectResource = z.infer<typeof ExistingProjectResources>['resources'][number];
+
 export const ImportedResource = z.object({
   resource_id: z.string().min(1),
   role: z.enum(['events', 'counts']),

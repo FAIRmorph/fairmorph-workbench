@@ -5,8 +5,8 @@
   import { listen } from '@tauri-apps/api/event';
   import {
     ApprovedDatasetMetadata, DatasetMetadataStatus, HandshakeResult,
-    ProgressEvent, RunResult, StagedDatasetMetadata, CreatedProject, ImportedResource, PipelineTemplate, SavedPipelineDraft, RegisteredPipeline, SelectedPipeline, ProjectVerification,
-    type DatasetMetadata, type Progress, type RunSummary, type PipelineTemplateInfo, type ProjectVerificationResult
+    ProgressEvent, RunResult, StagedDatasetMetadata, CreatedProject, ImportedResource, PipelineTemplate, SavedPipelineDraft, RegisteredPipeline, SelectedPipeline, ProjectVerification, ExistingProjectResources,
+    type DatasetMetadata, type Progress, type RunSummary, type PipelineTemplateInfo, type ProjectVerificationResult, type ExistingProjectResource
   } from '$lib/engine-protocol';
 
   let project = $state('');
@@ -22,11 +22,19 @@
   let pipelineSaved = $state(false);
   let pipelineSha = $state('');
   let selectedPipelineSha = $state('');
-  let canRunSelectedPipeline = $derived(runButtonReady(project, setupProject, selectedPipelineSha));
+  let resourceProject = $state('');
+  let projectResources = $state<ExistingProjectResource[]>([]);
+  let resourcesBusy = $state(false);
+  let resourcesMessage = $state('');
+  let resourcesError = $state('');
+  let canConfigurePipeline = $derived(!!project.trim() && project.trim() === resourceProject && projectResources.length > 0);
+  let canRunSelectedPipeline = $derived(runButtonReady(project, resourceProject, selectedPipelineSha));
   let pipelineBusy = $state(false);
   let pipelineError = $state('');
   let pipelineMessage = $state('');
-  let bindingsComplete = $derived(pipelineBindingsComplete(pipelineTemplate?.inputs, setupFiles, pipelineBindings, pipelineFormats));
+  let bindingsComplete = $derived(pipelineBindingsComplete(pipelineTemplate?.inputs,
+    projectResources.map(resource => ({ imported: true, resourceId: resource.resource_id })),
+    pipelineBindings, pipelineFormats));
   let setupBusy = $state(false);
   let setupError = $state('');
   let setupReady = $derived(!!setupProject && setupFiles.some(file => file.imported));
@@ -46,6 +54,21 @@
   let stagedSha = $state<string | null>(null);
   let savedDraft = $state(false);
   let currentProject = $state('');
+
+  function invalidatePipeline() {
+    pipelineTemplate = null;
+    pipelineBindings = {};
+    pipelineFormats = {};
+    pipelineSaved = false;
+    pipelineSha = '';
+    selectedPipelineSha = '';
+    pipelineError = '';
+    pipelineMessage = '';
+    resourceProject = '';
+    projectResources = [];
+    resourcesMessage = '';
+    resourcesError = '';
+  }
 
   function invalidateEditor() {
     verification = null;
@@ -71,6 +94,62 @@
     }).catch(e => error = String(e));
     return () => { disposed = true; unsubscribe?.(); };
   });
+
+  async function loadExistingResources() {
+    const target = project.trim();
+    if (!target) {
+      resourcesError = 'Bitte zuerst einen Projektordner auswählen oder einen Projektpfad eintragen.';
+      return;
+    }
+    if (busy || setupBusy || pipelineBusy || verificationBusy || resourcesBusy) {
+      resourcesError = 'Der Ladevorgang ist derzeit durch eine andere laufende Aktion gesperrt.';
+      return;
+    }
+    resourcesBusy = true;
+    invalidatePipeline();
+    error = '';
+    resourcesMessage = 'Importierte Projektressourcen werden eingelesen …';
+    try {
+      const result = ExistingProjectResources.parse(await invoke('list_project_resources', { project: target }));
+      if (project.trim() === target) {
+        projectResources = result.resources;
+        resourceProject = target;
+        const count = result.resources.length;
+        resourcesMessage = count > 0
+          ? count + ' importierte Ressource(n) geladen. Die technische Pipeline kann konfiguriert werden.'
+          : 'Das Projekt wurde gelesen, enthält aber noch keine importierten Ressourcen.';
+      }
+    } catch (e) {
+      if (project.trim() === target) {
+        resourcesMessage = '';
+        resourcesError = 'Projektressourcen konnten nicht geladen werden: ' + String(e);
+      }
+    } finally {
+      resourcesBusy = false;
+    }
+  }
+
+  async function chooseExistingProject() {
+    if (busy || setupBusy || pipelineBusy || verificationBusy || resourcesBusy) return;
+    error = '';
+    try {
+      const selected = await invoke<string | null>('choose_existing_project');
+      // Cancellation must preserve the current selection and editor state.
+      if (selected) {
+        if (selected !== project.trim()) {
+          project = selected;
+          invalidateEditor();
+          invalidatePipeline();
+          run = null;
+          progress = null;
+        }
+        // Re-selecting the same directory must refresh resource discovery too.
+        await loadExistingResources();
+      }
+    } catch (e) {
+      error = String(e);
+    }
+  }
 
   async function chooseParent() {
     if (busy || setupBusy) return;
@@ -113,6 +192,7 @@
       setupProject = created.project_path;
       project = created.project_path;
       invalidateEditor();
+      invalidatePipeline();
       setupMessage = 'Projekt angelegt. Bitte Originaldateien auswählen und deren Rollen festlegen.';
     } catch (e) {
       setupError = String(e);
@@ -142,6 +222,13 @@
           ? { ...item, imported: true, checksum: imported.sha256, resourceId: imported.resource_id }
           : item);
       }
+      if (project.trim() === setupProject) {
+        resourceProject = setupProject;
+        projectResources = setupFiles.filter(item => item.imported).map(item => ({
+          original_name: sourceFileName(item.path), role: item.role,
+          resource_id: item.resourceId, sha256: item.checksum
+        }));
+      }
       setupMessage = 'Dateien unverändert importiert. Das Projekt kann jetzt konfiguriert werden.';
     } catch (e) {
       setupError = String(e) + ' Erfolgreiche Importe bleiben registriert; fehlgeschlagene Dateien können erneut importiert werden.';
@@ -155,7 +242,7 @@
   }
 
   async function chooseTechnicalTemplate() {
-    if (!setupProject || !setupReady || busy || setupBusy || pipelineBusy) return;
+    if (!canConfigurePipeline || busy || setupBusy || pipelineBusy || resourcesBusy) return;
     pipelineBusy = true;
     pipelineError = '';
     pipelineMessage = '';
@@ -187,7 +274,7 @@
   }
 
   async function saveTechnicalPipeline() {
-    if (!pipelineTemplate || !bindingsComplete || !setupProject || busy || setupBusy || pipelineBusy) return;
+    if (!pipelineTemplate || !bindingsComplete || !canConfigurePipeline || busy || setupBusy || pipelineBusy || resourcesBusy) return;
     pipelineBusy = true;
     pipelineError = '';
     try {
@@ -197,7 +284,7 @@
         format: pipelineFormats[input.name]
       }));
       SavedPipelineDraft.parse(await invoke('save_project_pipeline_draft', {
-        project: setupProject,
+        project: resourceProject,
         template: pipelineTemplate.path,
         bindings
       }));
@@ -211,12 +298,12 @@
   }
 
   async function registerTechnicalPipeline() {
-    if (!pipelineSaved || !setupProject || busy || setupBusy || pipelineBusy) return;
+    if (!pipelineSaved || !canConfigurePipeline || busy || setupBusy || pipelineBusy || resourcesBusy) return;
     pipelineBusy = true;
     pipelineError = '';
     try {
       const registered = RegisteredPipeline.parse(await invoke('register_project_pipeline', {
-        project: setupProject
+        project: resourceProject
       }));
       pipelineSha = registered.pipeline_sha256;
       pipelineMessage = 'Unveränderliche Pipeline-Revision registriert. Zur Ausführung noch explizit auswählen.';
@@ -228,12 +315,12 @@
   }
 
   async function selectTechnicalPipeline() {
-    if (!pipelineSha || !setupProject || busy || setupBusy || pipelineBusy) return;
+    if (!pipelineSha || !canConfigurePipeline || busy || setupBusy || pipelineBusy || resourcesBusy) return;
     pipelineBusy = true;
     pipelineError = '';
     try {
       const selected = SelectedPipeline.parse(await invoke('select_registered_pipeline', {
-        project: setupProject,
+        project: resourceProject,
         pipelineSha256: pipelineSha
       }));
       selectedPipelineSha = selected.active_pipeline_sha256;
@@ -458,10 +545,38 @@
     {#if setupError}<p role="alert" class="error">{setupError}</p>{/if}
   </section>
 
-  {#if setupReady}
+  <section aria-labelledby="project-title">
+    <h2 id="project-title">Projekt</h2>
+    <label for="project">Projektverzeichnis</label>
+    <div class="setup-inline">
+      <input id="project" type="text" bind:value={project}
+        disabled={busy || setupBusy || pipelineBusy || verificationBusy || resourcesBusy}
+        oninput={() => { invalidateEditor(); invalidatePipeline(); run = null; progress = null; }}
+        placeholder="/pfad/zum/fairmorph-projekt" autocomplete="off" />
+      <button onclick={chooseExistingProject}
+        disabled={busy || setupBusy || pipelineBusy || verificationBusy || resourcesBusy}>Projektordner auswählen</button>
+    </div>
+    <p class="note">Bestehenden Projektordner mit <code>project.json</code> auswählen oder den Pfad manuell eingeben. Nur der Projektpfad wird an den Engine-Prozess übergeben. Fachliche Werte
+      werden ausschließlich in Projektdateien gespeichert und von der Engine selbst gelesen.</p>
+    <button type="button" onclick={loadExistingResources} disabled={resourcesBusy}>
+      {resourcesBusy ? 'Ressourcen werden geladen …' : 'Projektressourcen laden'}
+    </button>
+    {#if resourcesMessage}<p role="status">{resourcesMessage}</p>{/if}
+    {#if resourcesError}<p role="alert" class="error">{resourcesError}</p>{/if}
+    {#if busy || setupBusy || pipelineBusy || verificationBusy}
+      <p class="note" role="status">Während einer anderen Engine-Aktion ist das Laden von Projektressourcen nicht möglich.</p>
+    {/if}
+
+    {#if !resourcesMessage && !resourcesError}
+      <p class="note">Nach der Projektauswahl werden importierte Ressourcen geladen. Bei manueller Pfadeingabe bitte „Projektressourcen laden“ wählen.</p>
+    {/if}
+    <button onclick={loadDataset} disabled={busy || !project.trim()}>Projektmetadaten laden</button>
+  </section>
+
+  {#if canConfigurePipeline}
     <section aria-labelledby="pipeline-title">
       <h2 id="pipeline-title">Technische Pipeline konfigurieren</h2>
-      <p class="note">Eine bestehende deklarative <code>fairmorph.pipeline/1</code>-JSON-Vorlage auswählen. Keine Feldzuordnung, wissenschaftliche Beschreibung oder automatische Interpretation. Jede Eingangsressource wird ausdrücklich mit einer importierten Datei verknüpft.</p>
+      <p class="note">Eine bestehende deklarative <code>fairmorph.pipeline/1</code>-JSON-Vorlage auswählen – auch für ein bereits geöffnetes Projekt. Keine Feldzuordnung, wissenschaftliche Beschreibung oder automatische Interpretation. Jede Eingangsressource wird ausdrücklich mit einer importierten Datei verknüpft.</p>
       <button onclick={chooseTechnicalTemplate} disabled={busy || setupBusy || pipelineBusy}>Pipeline-Vorlage auswählen (JSON)</button>
       {#if pipelineTemplate}
         <p><strong>Vorlage:</strong> <code>{pipelineTemplate.path}</code></p>
@@ -477,8 +592,8 @@
                   resetPipelineDraft();
                 }}>
                 <option value="">Bitte ausdrücklich zuordnen</option>
-                {#each setupFiles.filter(file => file.imported) as file (file.path)}
-                  <option value={file.resourceId}>{sourceFileName(file.path)} ({file.role})</option>
+                {#each projectResources as resource (resource.resource_id)}
+                  <option value={resource.resource_id}>{resource.original_name} ({resource.role})</option>
                 {/each}
               </select>
             </label>
@@ -505,17 +620,6 @@
       {#if pipelineError}<p role="alert" class="error">{pipelineError}</p>{/if}
     </section>
   {/if}
-
-  <section aria-labelledby="project-title">
-    <h2 id="project-title">Projekt</h2>
-    <label for="project">Projektverzeichnis</label>
-    <input id="project" type="text" bind:value={project} disabled={busy}
-      oninput={invalidateEditor}
-      placeholder="/pfad/zum/fairmorph-projekt" autocomplete="off" />
-    <p class="note">Nur der Projektpfad wird an den Engine-Prozess übergeben. Fachliche Werte
-      werden ausschließlich in Projektdateien gespeichert und von der Engine selbst gelesen.</p>
-    <button onclick={loadDataset} disabled={busy || !project.trim()}>Projektmetadaten laden</button>
-  </section>
 
   <section aria-labelledby="metadata-title">
     <h2 id="metadata-title">Datensatztitel · neue Revision</h2>
