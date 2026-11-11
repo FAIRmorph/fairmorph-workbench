@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApprovedDatasetMetadata, DatasetMetadataStatus, CreatedProject, ImportedResource, PipelineTemplate, SavedPipelineDraft, RegisteredPipeline, SelectedPipeline, ProjectVerification, EngineEvent, HandshakeResult, ProgressEvent, RunResult, StagedDatasetMetadata, parseEngineEvent } from './engine-protocol';
+import { ApprovedDatasetMetadata, DatasetMetadataStatus, CreatedProject, ImportedResource, PipelineTemplate, SavedPipelineDraft, RegisteredPipeline, SelectedPipeline, ProjectVerification, ExistingProjectResources, EngineEvent, HandshakeResult, ProgressEvent, RunResult, StagedDatasetMetadata, parseEngineEvent } from './engine-protocol';
 
 describe('Engine v0.13 RUN/2 boundary', () => {
   it('accepts Engine handshake and run support', () => {
@@ -141,5 +141,25 @@ describe('Engine project integrity verification contract', () => {
     expect(ProjectVerification.safeParse({ ...valid, completed_runs: 1.5 }).success).toBe(false);
     expect(ProjectVerification.safeParse({ ...valid, exports: '0' }).success).toBe(false);
     expect(ProjectVerification.safeParse({ ...valid, project_path: '' }).success).toBe(false);
+  });
+});
+
+describe('existing project resource catalog contract', () => {
+  const valid = { resources: [{
+    resource_id: 'resource-counts-' + 'a'.repeat(64),
+    role: 'counts',
+    original_name: 'counts.csv',
+    sha256: 'a'.repeat(64)
+  }] };
+
+  it('accepts imported resources in existing projects', () => {
+    expect(ExistingProjectResources.parse(valid).resources[0].original_name).toBe('counts.csv');
+    expect(ExistingProjectResources.parse({ resources: [] }).resources).toEqual([]);
+  });
+
+  it('rejects malformed resource identifiers and checksums', () => {
+    expect(ExistingProjectResources.safeParse({ resources: [{ ...valid.resources[0], sha256: 'bad' }] }).success).toBe(false);
+    expect(ExistingProjectResources.safeParse({ resources: [{ ...valid.resources[0], resource_id: '' }] }).success).toBe(false);
+    expect(ExistingProjectResources.safeParse({ resources: [{ ...valid.resources[0], original_name: '' }] }).success).toBe(false);
   });
 });
