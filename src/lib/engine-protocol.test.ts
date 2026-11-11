@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApprovedDatasetMetadata, DatasetMetadataStatus, EngineEvent, HandshakeResult, ProgressEvent, RunResult, StagedDatasetMetadata, parseEngineEvent } from './engine-protocol';
+import { ApprovedDatasetMetadata, DatasetMetadataStatus, CreatedProject, ImportedResource, PipelineTemplate, SavedPipelineDraft, RegisteredPipeline, SelectedPipeline, ProjectVerification, EngineEvent, HandshakeResult, ProgressEvent, RunResult, StagedDatasetMetadata, parseEngineEvent } from './engine-protocol';
 
 describe('Engine v0.13 RUN/2 boundary', () => {
   it('accepts Engine handshake and run support', () => {
@@ -71,5 +71,75 @@ describe('Project-file dataset metadata revision responses', () => {
       status: 'approved', revision_sha256: sha, title: 'A title',
       confirmed_by: '', confirmed_at: '2026-11-10'
     }).success).toBe(false);
+  });
+});
+
+describe('Project setup Engine result contracts', () => {
+  it('accepts Engine-generated project identity', () => {
+    expect(CreatedProject.parse({
+      project_id: '12345678-1234-4234-8234-123456789abc',
+      project_path: '/tmp/my-project.fairmorph'
+    }).project_path).toBe('/tmp/my-project.fairmorph');
+  });
+  it('requires a recognized role and valid source checksum', () => {
+    const source = {
+      resource_id: 'resource-events-abc', role: 'events',
+      original_name: 'events.csv', sha256: 'a'.repeat(64)
+    };
+    expect(ImportedResource.parse(source).role).toBe('events');
+    expect(ImportedResource.safeParse({ ...source, role: 'unknown' }).success).toBe(false);
+    expect(ImportedResource.safeParse({ ...source, sha256: 'broken' }).success).toBe(false);
+  });
+});
+
+describe('technical pipeline setup protocol', () => {
+  const sha = 'b'.repeat(64);
+  const project_id = '12345678-1234-4234-8234-123456789abc';
+
+  it('accepts explicit technical input slots, pipeline outputs and step count', () => {
+    expect(PipelineTemplate.parse({
+      path: '/tmp/template.json',
+      inputs: [{name: 'survey', format: 'csv'}, {name: 'counts', format: 'parquet'}],
+      outputs: ['normalized'], steps: 2
+    }).inputs).toHaveLength(2);
+  });
+  it('rejects missing inputs, malformed formats and unpopulated templates', () => {
+    const template = {
+      path: '/tmp/template.json',
+      inputs: [{name: 'events', format: 'csv'}], outputs: ['out'], steps: 1
+    };
+    expect(PipelineTemplate.safeParse({...template, inputs: []}).success).toBe(false);
+    expect(PipelineTemplate.safeParse({...template, inputs: [{name: 'events', format: 'json'}]}).success).toBe(false);
+    expect(PipelineTemplate.safeParse({...template, steps: 0}).success).toBe(false);
+  });
+  it('requires real Engine registration and selection identities', () => {
+    expect(SavedPipelineDraft.parse({path: '/tmp/project/configurations/drafts/pipeline-technical.json', inputs: 2}).inputs).toBe(2);
+    expect(RegisteredPipeline.parse({pipeline_sha256: sha}).pipeline_sha256).toBe(sha);
+    expect(SelectedPipeline.parse({project_id, active_pipeline_sha256: sha}).active_pipeline_sha256).toBe(sha);
+    expect(RegisteredPipeline.safeParse({pipeline_sha256: '123'}).success).toBe(false);
+    expect(SelectedPipeline.safeParse({project_id, active_pipeline_sha256: 'not-a-sha'}).success).toBe(false);
+  });
+});
+
+describe('Engine project integrity verification contract', () => {
+  const valid = {
+    project_path: '/tmp/project.fairmorph',
+    source_objects: 2,
+    completed_runs: 1,
+    exports: 0,
+    status: 'verified'
+  };
+
+  it('accepts the Engine verify-project result and zero exports', () => {
+    expect(ProjectVerification.parse(valid)).toEqual(valid);
+    expect(ProjectVerification.parse({ ...valid, completed_runs: 0 }).completed_runs).toBe(0);
+  });
+
+  it('rejects failed status and malformed or negative counters', () => {
+    expect(ProjectVerification.safeParse({ ...valid, status: 'invalid' }).success).toBe(false);
+    expect(ProjectVerification.safeParse({ ...valid, source_objects: -1 }).success).toBe(false);
+    expect(ProjectVerification.safeParse({ ...valid, completed_runs: 1.5 }).success).toBe(false);
+    expect(ProjectVerification.safeParse({ ...valid, exports: '0' }).success).toBe(false);
+    expect(ProjectVerification.safeParse({ ...valid, project_path: '' }).success).toBe(false);
   });
 });

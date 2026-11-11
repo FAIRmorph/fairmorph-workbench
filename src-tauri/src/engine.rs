@@ -6,6 +6,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_dialog::DialogExt;
 
 #[cfg(not(debug_assertions))]
 use tauri::Manager;
@@ -78,12 +79,16 @@ fn execute(app: AppHandle, action: &str, project: Option<&Path>) -> Result<Value
     let mut cmd = engine_command(&app)?;
     match action {
         "handshake" => { cmd.arg("handshake"); }
-        "run-pipeline" | "show-dataset-metadata" | "stage-dataset-metadata" | "approve-dataset-metadata" => {
+        "run-pipeline" | "verify-project" | "show-dataset-metadata" | "stage-dataset-metadata" | "approve-dataset-metadata" => {
             let directory = project.ok_or("RUN requires a project")?;
             cmd.arg(action).arg("--project").arg(directory);
         }
         _ => return Err("Unsupported Engine command".into()),
     }
+    execute_command(app, cmd)
+}
+
+fn execute_command(app: AppHandle, mut cmd: Command) -> Result<Value, String> {
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| format!("Cannot start Engine: {e}"))?;
     let stdout = child.stdout.take().ok_or("Missing Engine stdout")?;
@@ -149,9 +154,255 @@ fn execute(app: AppHandle, action: &str, project: Option<&Path>) -> Result<Value
     result.get("data").cloned().ok_or("Engine success has no data".into())
 }
 
+fn new_project_target(target: &str, name: &str) -> Result<PathBuf, String> {
+    if name.trim().is_empty() {
+        return Err("A project name is required".into());
+    }
+    let path = PathBuf::from(target);
+    if !path.is_absolute() || path.exists() || path.is_symlink() {
+        return Err("Choose a new absolute project path; existing folders are not overwritten".into());
+    }
+    let parent = path.parent().ok_or("Missing parent directory")?;
+    if !parent.is_dir() || parent.is_symlink() {
+        return Err("Parent directory must exist and not be a symlink".into());
+    }
+    let parent = parent.canonicalize().map_err(|e| e.to_string())?;
+    let file_name = path.file_name().ok_or("Missing project directory name")?;
+    Ok(parent.join(file_name))
+}
+
+fn import_source_path(source: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(source);
+    if !path.is_absolute() || !path.is_file() || path.is_symlink() {
+        return Err("Source must be an existing regular file at an absolute path".into());
+    }
+    path.canonicalize().map_err(|e| e.to_string())
+}
+
+fn resource_role(role: &str) -> Result<&str, String> {
+    // These are technical import roles, not approved scientific entity types.
+    if matches!(role, "events" | "counts") {
+        Ok(role)
+    } else {
+        Err("Choose a resource role: events or counts".into())
+    }
+}
+
+#[tauri::command]
+pub async fn choose_project_parent(app: AppHandle) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = app.dialog().file().blocking_pick_folder();
+        path.map(|item| item.into_path()
+            .map(|p| p.to_string_lossy().into_owned())
+            .map_err(|e| e.to_string()))
+            .transpose()
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn choose_source_files(app: AppHandle) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let paths = app.dialog().file().blocking_pick_files().unwrap_or_default();
+        paths.into_iter().map(|item| item.into_path()
+            .map(|p| p.to_string_lossy().into_owned())
+            .map_err(|e| e.to_string())).collect()
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn create_project(
+    app: AppHandle, project: String, name: String,
+) -> Result<Value, String> {
+    let target = new_project_target(&project, &name)?;
+    let name = name.trim().to_owned();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = engine_command(&app)?;
+        cmd.arg("init-project").arg("--project").arg(&target)
+            .arg("--name").arg(name);
+        let result = execute_command(app, cmd)?;
+        if result.get("project_id").and_then(Value::as_str).is_none() {
+            return Err("Engine did not return a project identifier".into());
+        }
+        Ok(result)
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn import_project_source(
+    app: AppHandle, project: String, source: String, role: String,
+) -> Result<Value, String> {
+    let project = validate_project(&project)?;
+    let source = import_source_path(&source)?;
+    let role = resource_role(&role)?.to_owned();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = engine_command(&app)?;
+        cmd.arg("import-resource").arg("--project").arg(&project)
+            .arg("--source").arg(&source).arg("--role").arg(&role);
+        let result = execute_command(app, cmd)?;
+        if result.get("resource_id").and_then(Value::as_str).is_none()
+            || result.get("sha256").and_then(Value::as_str).is_none() {
+            return Err("Engine did not return source identity and checksum".into());
+        }
+        Ok(result)
+    }).await.map_err(|e| e.to_string())?
+}
+
+
+#[derive(serde::Deserialize)]
+pub struct PipelineBinding {
+    slot: String,
+    resource_id: String,
+    format: String,
+}
+
+fn technical_pipeline_template(template: &Path) -> Result<Value, String> {
+    if !template.is_absolute() || !template.is_file() || template.is_symlink() {
+        return Err("Pipeline template must be an existing regular JSON file".into());
+    }
+    let data: Value = serde_json::from_slice(
+        &fs::read(template).map_err(|e| format!("Cannot read pipeline template: {e}"))?
+    ).map_err(|e| format!("Invalid pipeline JSON: {e}"))?;
+    let obj = data.as_object().ok_or("Pipeline must be a JSON object")?;
+    if obj.keys().any(|key| !matches!(key.as_str(), "schema_version" | "resources" | "steps" | "outputs")) {
+        return Err("MVP accepts technical DAG templates only, without entity/profile metadata".into());
+    }
+    if data.get("schema_version").and_then(Value::as_str) != Some("fairmorph.pipeline/1") {
+        return Err("Unsupported pipeline schema_version".into());
+    }
+    let steps = data.get("steps").and_then(Value::as_array)
+        .filter(|a| !a.is_empty()).ok_or("Template requires a nonempty steps array")?;
+    let outputs = data.get("outputs").and_then(Value::as_array)
+        .filter(|a| !a.is_empty()).ok_or("Template requires a nonempty outputs array")?;
+    if !steps.iter().all(Value::is_object) || !outputs.iter().all(Value::is_string) {
+        return Err("Invalid technical pipeline steps or outputs".into());
+    }
+    let resources = data.get("resources").and_then(Value::as_object)
+        .filter(|m| !m.is_empty()).ok_or("Template requires declared resource slots")?;
+    for (slot, binding) in resources {
+        if slot.is_empty() || !slot.bytes().next().unwrap_or(b' ').is_ascii_alphabetic()
+            || !slot.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-') {
+            return Err("Invalid template resource slot".into());
+        }
+        if !binding.is_object() {
+            return Err("Invalid template resource binding".into());
+        }
+        if !matches!(binding.get("format").and_then(Value::as_str), Some("csv" | "parquet")) {
+            return Err("Template resource format must be csv or parquet".into());
+        }
+    }
+    Ok(data)
+}
+
+fn configured_pipeline(template: &Path, bindings: &[PipelineBinding]) -> Result<Value, String> {
+    let mut config = technical_pipeline_template(template)?;
+    let resources = config.get_mut("resources").and_then(Value::as_object_mut)
+        .ok_or("Template resources missing")?;
+    if bindings.len() != resources.len() {
+        return Err("Every declared pipeline input must be bound exactly once".into());
+    }
+    let mut seen = std::collections::HashSet::new();
+    for binding in bindings {
+        if !seen.insert(binding.slot.as_str()) {
+            return Err("Duplicate pipeline input binding".into());
+        }
+        if binding.resource_id.trim().is_empty()
+            || !matches!(binding.format.as_str(), "csv" | "parquet") {
+            return Err("Invalid resource identity or input format".into());
+        }
+        let input = resources.get_mut(&binding.slot)
+            .ok_or("Binding refers to an unknown template resource slot")?;
+        *input = json!({"resource_id": binding.resource_id, "format": binding.format});
+    }
+    Ok(config)
+}
+
+#[tauri::command]
+pub async fn choose_pipeline_template(app: AppHandle) -> Result<Option<Value>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let picked = app.dialog().file().add_filter("Pipeline JSON", &["json"])
+            .blocking_pick_file();
+        match picked {
+            None => Ok(None),
+            Some(file) => {
+                let path = file.into_path().map_err(|e| e.to_string())?;
+                let config = technical_pipeline_template(&path)?;
+                let inputs: Vec<Value> = config["resources"].as_object().ok_or("No resources")?
+                    .iter().map(|(name, binding)| json!({
+                        "name": name, "format": binding["format"]
+                    })).collect();
+                Ok(Some(json!({
+                    "path": path.to_string_lossy(),
+                    "inputs": inputs,
+                    "outputs": config["outputs"],
+                    "steps": config["steps"].as_array().map(Vec::len).unwrap_or(0)
+                })))
+            }
+        }
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn save_project_pipeline_draft(
+    project: String, template: String, bindings: Vec<PipelineBinding>,
+) -> Result<Value, String> {
+    let project = validate_project(&project)?;
+    let template = PathBuf::from(&template);
+    let config = configured_pipeline(&template, &bindings)?;
+    atomic_draft_write(&project, "pipeline-technical.json", &config)?;
+    Ok(json!({"path": project.join("configurations/drafts/pipeline-technical.json")
+        .to_string_lossy(), "inputs": bindings.len()}))
+}
+
+#[tauri::command]
+pub async fn register_project_pipeline(
+    app: AppHandle, project: String,
+) -> Result<Value, String> {
+    let project = validate_project(&project)?;
+    let definition = project.join("configurations/drafts/pipeline-technical.json");
+    if !definition.is_file() || definition.is_symlink() {
+        return Err("Save the pipeline draft before registration".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = engine_command(&app)?;
+        cmd.arg("register-pipeline").arg("--project").arg(&project)
+            .arg("--definition").arg(&definition);
+        let result = execute_command(app, cmd)?;
+        if result.get("pipeline_sha256").and_then(Value::as_str).is_none() {
+            return Err("Engine returned no pipeline SHA-256".into());
+        }
+        Ok(result)
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn select_registered_pipeline(
+    app: AppHandle, project: String, pipeline_sha256: String,
+) -> Result<Value, String> {
+    let project = validate_project(&project)?;
+    validate_revision_sha(&pipeline_sha256)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = engine_command(&app)?;
+        cmd.arg("select-pipeline").arg("--project").arg(&project)
+            .arg("--pipeline-sha256").arg(&pipeline_sha256);
+        let result = execute_command(app, cmd)?;
+        if result.get("active_pipeline_sha256").and_then(Value::as_str)
+            != Some(pipeline_sha256.as_str()) {
+            return Err("Engine did not select the requested pipeline revision".into());
+        }
+        Ok(result)
+    }).await.map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn engine_handshake(app: AppHandle) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || execute(app, "handshake", None))
+        .await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn verify_project(app: AppHandle, project: String) -> Result<Value, String> {
+    let project = validate_project(&project)?;
+    tauri::async_runtime::spawn_blocking(move || execute(app, "verify-project", Some(&project)))
         .await.map_err(|e| e.to_string())?
 }
 
@@ -267,8 +518,166 @@ pub async fn confirm_dataset_metadata(
 
 #[cfg(test)]
 mod tests {
-    use super::{atomic_draft_write, validate_project};
+    use super::{atomic_draft_write, validate_project, new_project_target, resource_role, import_source_path, configured_pipeline, PipelineBinding};
     use serde_json::json;
+
+    #[test]
+    fn validates_new_project_location_and_role() {
+        let root = std::env::temp_dir();
+        let target = root.join(format!("fairmorph-proposed-{}-unused", std::process::id()));
+        let expected = root.canonicalize().unwrap().join(target.file_name().unwrap());
+        assert_eq!(new_project_target(target.to_str().unwrap(), "Survey").unwrap(), expected);
+        assert!(new_project_target("", "Survey").is_err());
+        assert!(new_project_target(root.to_str().unwrap(), "Survey").is_err());
+        assert!(new_project_target(target.to_str().unwrap(), "").is_err());
+        assert!(resource_role("events").is_ok());
+        assert!(resource_role("counts").is_ok());
+        assert!(resource_role("other").is_err());
+        assert!(import_source_path(target.to_str().unwrap()).is_err());
+    }
+
+
+    #[test]
+    fn pipeline_binding_requires_all_explicit_slots_and_preserves_steps() {
+        let dir = std::env::temp_dir().join(format!(
+            "fairmorph-template-test-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("template.json");
+        let source = json!({
+            "schema_version": "fairmorph.pipeline/1",
+            "resources": {"survey": {"resource_id": "UNBOUND", "format": "csv"}},
+            "steps": [{
+                "id": "keep", "operator": "table.select/1",
+                "inputs": ["survey"], "output": "selected",
+                "parameters": {"columns": ["id"]}
+            }],
+            "outputs": ["selected"]
+        });
+        std::fs::write(&path, serde_json::to_vec(&source).unwrap()).unwrap();
+        let bindings = vec![PipelineBinding {
+            slot: "survey".into(), resource_id: "resource-a".into(), format: "parquet".into()
+        }];
+        let compiled = configured_pipeline(&path, &bindings).unwrap();
+        assert_eq!(compiled["steps"], source["steps"]);
+        assert_eq!(compiled["resources"]["survey"]["resource_id"], "resource-a");
+        assert_eq!(compiled["resources"]["survey"]["format"], "parquet");
+        assert!(configured_pipeline(&path, &[]).is_err());
+        assert!(configured_pipeline(&path, &[PipelineBinding {
+            slot: "unknown".into(), resource_id: "resource-a".into(), format: "csv".into()
+        }]).is_err());
+        let mut scientific = source;
+        scientific["entities"] = json!({});
+        std::fs::write(&path, serde_json::to_vec(&scientific).unwrap()).unwrap();
+        assert!(configured_pipeline(&path, &bindings).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+
+    #[test]
+    fn invalid_pipeline_templates_are_rejected_without_writing_anything() {
+        use super::technical_pipeline_template;
+        let dir = std::env::temp_dir().join(format!(
+            "fairmorph-invalid-template-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let file = dir.join("template.json");
+        for invalid in [
+            "not json",
+            "[]",
+            r#"{"schema_version":"other","resources":{"events":{"format":"csv"}},"steps":[{}],"outputs":["out"]}"#,
+            r#"{"schema_version":"fairmorph.pipeline/1","resources":{},"steps":[{}],"outputs":["out"]}"#,
+            r#"{"schema_version":"fairmorph.pipeline/1","resources":{"events":{"format":"json"}},"steps":[{}],"outputs":["out"]}"#,
+            r#"{"schema_version":"fairmorph.pipeline/1","resources":{"events":{"format":"csv"}},"steps":[],"outputs":["out"]}"#,
+            r#"{"schema_version":"fairmorph.pipeline/1","resources":{"events":{"format":"csv"}},"steps":[{}],"outputs":["out"],"entities":{}}"#
+        ] {
+            std::fs::write(&file, invalid).unwrap();
+            assert!(technical_pipeline_template(&file).is_err(), "accepted {invalid}");
+        }
+        assert!(technical_pipeline_template(&dir.join("missing.json")).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn duplicate_and_incomplete_pipeline_bindings_are_rejected() {
+        let dir = std::env::temp_dir().join(format!(
+            "fairmorph-bindings-test-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let template = dir.join("pipeline.json");
+        std::fs::write(&template, serde_json::to_vec(&json!({
+            "schema_version": "fairmorph.pipeline/1",
+            "resources": {"events": {"format": "csv"}, "counts": {"format": "csv"}},
+            "steps": [{"id":"combine","operator":"table.join/1",
+                "inputs":["events","counts"],"output":"combined","parameters":{"keys":["id"],"cardinality":"m:1"}}],
+            "outputs": ["combined"]
+        })).unwrap()).unwrap();
+        let bind = |slot: &str, format: &str| PipelineBinding {
+            slot: slot.into(), resource_id: format!("resource-{slot}"), format: format.into()
+        };
+        assert!(configured_pipeline(&template, &[]).is_err());
+        assert!(configured_pipeline(&template, &[bind("events","csv")]).is_err());
+        assert!(configured_pipeline(&template,
+            &[bind("events","csv"), bind("events","csv")]).is_err());
+        assert!(configured_pipeline(&template,
+            &[bind("events","csv"), bind("missing","csv")]).is_err());
+        assert!(configured_pipeline(&template,
+            &[bind("events","csv"), bind("counts","json")]).is_err());
+        let valid = configured_pipeline(&template,
+            &[bind("events","csv"), bind("counts","parquet")]).unwrap();
+        assert_eq!(valid["resources"]["events"]["resource_id"], "resource-events");
+        assert_eq!(valid["resources"]["counts"]["format"], "parquet");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn rejects_symlink_source_and_does_not_modify_existing_project() {
+        let dir = std::env::temp_dir().join(format!(
+            "fairmorph-source-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let source = dir.join("raw.csv");
+        std::fs::write(&source, b"id,count\\n1,0\\n").unwrap();
+        let saved = std::fs::read(&source).unwrap();
+        assert_eq!(import_source_path(source.to_str().unwrap()).unwrap(), source.canonicalize().unwrap());
+        assert!(new_project_target(dir.to_str().unwrap(), "Existing").is_err());
+        assert_eq!(std::fs::read(&source).unwrap(), saved);
+        #[cfg(unix)]
+        {
+            let link = dir.join("source-link.csv");
+            std::os::unix::fs::symlink(&source, &link).unwrap();
+            assert!(import_source_path(link.to_str().unwrap()).is_err());
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn pipeline_draft_write_preserves_unrelated_immutable_configuration() {
+        let dir = std::env::temp_dir().join(format!(
+            "fairmorph-draft-safety-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("configurations/pipelines")).unwrap();
+        let pinned = dir.join("configurations/pipelines/immutable.json");
+        std::fs::write(&pinned, "pinned").unwrap();
+        let draft = json!({"schema_version": "fairmorph.pipeline/1", "resources": {},
+            "steps": [], "outputs": []});
+        atomic_draft_write(&dir, "pipeline-technical.json", &draft).unwrap();
+        assert_eq!(std::fs::read_to_string(&pinned).unwrap(), "pinned");
+        assert_eq!(serde_json::from_slice::<serde_json::Value>(
+            &std::fs::read(dir.join("configurations/drafts/pipeline-technical.json")).unwrap()
+        ).unwrap(), draft);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn rejects_missing_project() {
