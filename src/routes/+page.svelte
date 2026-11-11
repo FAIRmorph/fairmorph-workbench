@@ -25,6 +25,8 @@
   let resourceProject = $state('');
   let projectResources = $state<ExistingProjectResource[]>([]);
   let resourcesBusy = $state(false);
+  let resourcesMessage = $state('');
+  let resourcesError = $state('');
   let canConfigurePipeline = $derived(!!project.trim() && project.trim() === resourceProject && projectResources.length > 0);
   let canRunSelectedPipeline = $derived(runButtonReady(project, resourceProject, selectedPipelineSha));
   let pipelineBusy = $state(false);
@@ -64,6 +66,8 @@
     pipelineMessage = '';
     resourceProject = '';
     projectResources = [];
+    resourcesMessage = '';
+    resourcesError = '';
   }
 
   function invalidateEditor() {
@@ -97,14 +101,21 @@
     resourcesBusy = true;
     invalidatePipeline();
     error = '';
+    resourcesMessage = 'Importierte Projektressourcen werden eingelesen …';
     try {
       const result = ExistingProjectResources.parse(await invoke('list_project_resources', { project: target }));
       if (project.trim() === target) {
         projectResources = result.resources;
         resourceProject = target;
+        resourcesMessage = result.resources.length
+          ? result.resources.length + ' importierte Ressource(n) geladen. Die technische Pipeline kann konfiguriert werden.'
+          : 'Das Projekt wurde gelesen, enthält aber noch keine importierten Ressourcen.';
       }
     } catch (e) {
-      if (project.trim() === target) error = 'Projektressourcen konnten nicht geladen werden: ' + String(e);
+      if (project.trim() === target) {
+        resourcesMessage = '';
+        resourcesError = 'Projektressourcen konnten nicht geladen werden: ' + String(e);
+      }
     } finally {
       resourcesBusy = false;
     }
@@ -539,9 +550,9 @@
     <button onclick={loadExistingResources} disabled={!project.trim() || busy || setupBusy || pipelineBusy || verificationBusy || resourcesBusy}>
       {resourcesBusy ? 'Ressourcen werden geladen …' : 'Projektressourcen laden'}
     </button>
-    {#if canConfigurePipeline}
-      <p role="status">{projectResources.length} importierte Ressourcen verfügbar. Eine neue technische Pipeline kann im folgenden Abschnitt konfiguriert werden.</p>
-    {:else}
+    {#if resourcesMessage}<p role="status">{resourcesMessage}</p>{/if}
+    {#if resourcesError}<p role="alert" class="error">{resourcesError}</p>{/if}
+    {#if !resourcesMessage && !resourcesError}
       <p class="note">Nach der Projektauswahl werden importierte Ressourcen geladen. Bei manueller Pfadeingabe bitte „Projektressourcen laden“ wählen.</p>
     {/if}
     <button onclick={loadDataset} disabled={busy || !project.trim()}>Projektmetadaten laden</button>
