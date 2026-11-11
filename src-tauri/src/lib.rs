@@ -9,6 +9,7 @@ pub fn run() {
             engine::engine_handshake,
             engine::choose_project_parent,
             engine::choose_existing_project,
+            engine::list_project_resources,
             engine::choose_source_files,
             engine::create_project,
             engine::import_project_source,
