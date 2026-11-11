@@ -109,7 +109,16 @@ try {
   assert.deepEqual(readdirSync(join(project, 'runs')), []);
   assert.deepEqual(readFileSync(events), sourceBytes.get(events));
   assert.deepEqual(readFileSync(counts), sourceBytes.get(counts));
-  cli('verify-project', ['--project', project]);
+  const beforeVerify = readFileSync(join(project, 'project.json'));
+  const verification = cli('verify-project', ['--project', project]);
+  assert.equal(verification.status, 'verified');
+  assert.equal(verification.source_objects, 2);
+  assert.equal(verification.completed_runs, 0);
+  assert.equal(verification.exports, 0);
+  assert.deepEqual(readFileSync(join(project, 'project.json')), beforeVerify,
+    'verify-project must not change the project descriptor');
+  assert.deepEqual(readdirSync(join(project, 'runs')), [],
+    'verify-project must not trigger a RUN');
   console.log('Project setup integration PASS: init/import/dedupe/register/select/verify; no RUN or source modification');
 } finally {
   rmSync(root, { recursive: true, force: true });
