@@ -72,6 +72,23 @@
     return () => { disposed = true; unsubscribe?.(); };
   });
 
+  async function chooseExistingProject() {
+    if (busy || setupBusy || pipelineBusy || verificationBusy) return;
+    error = '';
+    try {
+      const selected = await invoke<string | null>('choose_existing_project');
+      // Cancellation must preserve the current selection and editor state.
+      if (selected && selected !== project.trim()) {
+        project = selected;
+        invalidateEditor();
+        run = null;
+        progress = null;
+      }
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
   async function chooseParent() {
     if (busy || setupBusy) return;
     setupError = '';
@@ -509,10 +526,15 @@
   <section aria-labelledby="project-title">
     <h2 id="project-title">Projekt</h2>
     <label for="project">Projektverzeichnis</label>
-    <input id="project" type="text" bind:value={project} disabled={busy}
-      oninput={invalidateEditor}
-      placeholder="/pfad/zum/fairmorph-projekt" autocomplete="off" />
-    <p class="note">Nur der Projektpfad wird an den Engine-Prozess übergeben. Fachliche Werte
+    <div class="setup-inline">
+      <input id="project" type="text" bind:value={project}
+        disabled={busy || setupBusy || pipelineBusy || verificationBusy}
+        oninput={() => { invalidateEditor(); run = null; progress = null; }}
+        placeholder="/pfad/zum/fairmorph-projekt" autocomplete="off" />
+      <button onclick={chooseExistingProject}
+        disabled={busy || setupBusy || pipelineBusy || verificationBusy}>Projektordner auswählen</button>
+    </div>
+    <p class="note">Bestehenden Projektordner mit <code>project.json</code> auswählen oder den Pfad manuell eingeben. Nur der Projektpfad wird an den Engine-Prozess übergeben. Fachliche Werte
       werden ausschließlich in Projektdateien gespeichert und von der Engine selbst gelesen.</p>
     <button onclick={loadDataset} disabled={busy || !project.trim()}>Projektmetadaten laden</button>
   </section>
