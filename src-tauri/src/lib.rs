@@ -8,6 +8,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             engine::engine_handshake,
             engine::choose_project_parent,
+            engine::choose_existing_project,
             engine::choose_source_files,
             engine::create_project,
             engine::import_project_source,
