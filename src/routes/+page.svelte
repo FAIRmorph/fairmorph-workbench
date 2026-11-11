@@ -97,7 +97,14 @@
 
   async function loadExistingResources() {
     const target = project.trim();
-    if (!target || busy || setupBusy || pipelineBusy || verificationBusy || resourcesBusy) return;
+    if (!target) {
+      resourcesError = 'Bitte zuerst einen Projektordner auswählen oder einen Projektpfad eintragen.';
+      return;
+    }
+    if (busy || setupBusy || pipelineBusy || verificationBusy || resourcesBusy) {
+      resourcesError = 'Der Ladevorgang ist derzeit durch eine andere laufende Aktion gesperrt.';
+      return;
+    }
     resourcesBusy = true;
     invalidatePipeline();
     error = '';
@@ -127,12 +134,15 @@
     try {
       const selected = await invoke<string | null>('choose_existing_project');
       // Cancellation must preserve the current selection and editor state.
-      if (selected && selected !== project.trim()) {
-        project = selected;
-        invalidateEditor();
-        invalidatePipeline();
-        run = null;
-        progress = null;
+      if (selected) {
+        if (selected !== project.trim()) {
+          project = selected;
+          invalidateEditor();
+          invalidatePipeline();
+          run = null;
+          progress = null;
+        }
+        // Re-selecting the same directory must refresh resource discovery too.
         await loadExistingResources();
       }
     } catch (e) {
@@ -547,9 +557,12 @@
     </div>
     <p class="note">Bestehenden Projektordner mit <code>project.json</code> auswählen oder den Pfad manuell eingeben. Nur der Projektpfad wird an den Engine-Prozess übergeben. Fachliche Werte
       werden ausschließlich in Projektdateien gespeichert und von der Engine selbst gelesen.</p>
-    <button onclick={loadExistingResources} disabled={!project.trim() || busy || setupBusy || pipelineBusy || verificationBusy || resourcesBusy}>
+    <button type="button" onclick={loadExistingResources} disabled={resourcesBusy || !project.trim()}>
       {resourcesBusy ? 'Ressourcen werden geladen …' : 'Projektressourcen laden'}
     </button>
+    {#if busy || setupBusy || pipelineBusy || verificationBusy}
+      <p class="note" role="status">Während einer anderen Engine-Aktion ist das Laden von Projektressourcen nicht möglich.</p>
+    {/if}
     {#if resourcesMessage}<p role="status">{resourcesMessage}</p>{/if}
     {#if resourcesError}<p role="alert" class="error">{resourcesError}</p>{/if}
     {#if !resourcesMessage && !resourcesError}
