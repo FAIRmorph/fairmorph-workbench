@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApprovedDatasetMetadata, DatasetMetadataStatus, CreatedProject, ImportedResource, PipelineTemplate, SavedPipelineDraft, RegisteredPipeline, SelectedPipeline, EngineEvent, HandshakeResult, ProgressEvent, RunResult, StagedDatasetMetadata, parseEngineEvent } from './engine-protocol';
+import { ApprovedDatasetMetadata, DatasetMetadataStatus, CreatedProject, ImportedResource, PipelineTemplate, SavedPipelineDraft, RegisteredPipeline, SelectedPipeline, ProjectVerification, EngineEvent, HandshakeResult, ProgressEvent, RunResult, StagedDatasetMetadata, parseEngineEvent } from './engine-protocol';
 
 describe('Engine v0.13 RUN/2 boundary', () => {
   it('accepts Engine handshake and run support', () => {
@@ -118,5 +118,28 @@ describe('technical pipeline setup protocol', () => {
     expect(SelectedPipeline.parse({project_id, active_pipeline_sha256: sha}).active_pipeline_sha256).toBe(sha);
     expect(RegisteredPipeline.safeParse({pipeline_sha256: '123'}).success).toBe(false);
     expect(SelectedPipeline.safeParse({project_id, active_pipeline_sha256: 'not-a-sha'}).success).toBe(false);
+  });
+});
+
+describe('Engine project integrity verification contract', () => {
+  const valid = {
+    project_path: '/tmp/project.fairmorph',
+    source_objects: 2,
+    completed_runs: 1,
+    exports: 0,
+    status: 'verified'
+  };
+
+  it('accepts the Engine verify-project result and zero exports', () => {
+    expect(ProjectVerification.parse(valid)).toEqual(valid);
+    expect(ProjectVerification.parse({ ...valid, completed_runs: 0 }).completed_runs).toBe(0);
+  });
+
+  it('rejects failed status and malformed or negative counters', () => {
+    expect(ProjectVerification.safeParse({ ...valid, status: 'invalid' }).success).toBe(false);
+    expect(ProjectVerification.safeParse({ ...valid, source_objects: -1 }).success).toBe(false);
+    expect(ProjectVerification.safeParse({ ...valid, completed_runs: 1.5 }).success).toBe(false);
+    expect(ProjectVerification.safeParse({ ...valid, exports: '0' }).success).toBe(false);
+    expect(ProjectVerification.safeParse({ ...valid, project_path: '' }).success).toBe(false);
   });
 });
