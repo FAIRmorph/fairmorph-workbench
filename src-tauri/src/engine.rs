@@ -199,6 +199,22 @@ pub async fn choose_project_parent(app: AppHandle) -> Result<Option<String>, Str
     }).await.map_err(|e| e.to_string())?
 }
 
+/// Select an already initialized FAIRmorph project, without creating or changing files.
+#[tauri::command]
+pub async fn choose_existing_project(app: AppHandle) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let picked = app.dialog().file().blocking_pick_folder();
+        match picked {
+            None => Ok(None),
+            Some(folder) => {
+                let path = folder.into_path().map_err(|e| e.to_string())?;
+                let canonical = validate_project(&path.to_string_lossy())?;
+                Ok(Some(canonical.to_string_lossy().into_owned()))
+            }
+        }
+    }).await.map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn choose_source_files(app: AppHandle) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
