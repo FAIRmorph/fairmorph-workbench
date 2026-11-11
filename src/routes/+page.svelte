@@ -25,6 +25,8 @@
   let resourceProject = $state('');
   let projectResources = $state<ExistingProjectResource[]>([]);
   let resourcesBusy = $state(false);
+  let resourceClickCount = $state(0);
+  let resourceClickStatus = $state('');
   let resourcesMessage = $state('');
   let resourcesError = $state('');
   let canConfigurePipeline = $derived(!!project.trim() && project.trim() === resourceProject && projectResources.length > 0);
@@ -96,6 +98,8 @@
   });
 
   async function loadExistingResources() {
+    resourceClickCount += 1;
+    resourceClickStatus = 'Klick ' + resourceClickCount + ' erkannt – prüfe Projekt und Tauri-Aufruf.';
     const target = project.trim();
     if (!target) {
       resourcesError = 'Bitte zuerst einen Projektordner auswählen oder einen Projektpfad eintragen.';
@@ -107,6 +111,7 @@
     }
     resourcesBusy = true;
     invalidatePipeline();
+    resourceClickStatus = 'Klick ' + resourceClickCount + ' erkannt – Tauri-Ressourcenabfrage läuft.';
     error = '';
     resourcesMessage = 'Importierte Projektressourcen werden eingelesen …';
     try {
@@ -114,6 +119,7 @@
       if (project.trim() === target) {
         projectResources = result.resources;
         resourceProject = target;
+        resourceClickStatus = 'Klick ' + resourceClickCount + ' erfolgreich beantwortet.';
         resourcesMessage = result.resources.length
           ? result.resources.length + ' importierte Ressource(n) geladen. Die technische Pipeline kann konfiguriert werden.'
           : 'Das Projekt wurde gelesen, enthält aber noch keine importierten Ressourcen.';
@@ -122,6 +128,7 @@
       if (project.trim() === target) {
         resourcesMessage = '';
         resourcesError = 'Projektressourcen konnten nicht geladen werden: ' + String(e);
+        resourceClickStatus = 'Klick ' + resourceClickCount + ' erreichte Tauri nicht erfolgreich.';
       }
     } finally {
       resourcesBusy = false;
@@ -557,9 +564,12 @@
     </div>
     <p class="note">Bestehenden Projektordner mit <code>project.json</code> auswählen oder den Pfad manuell eingeben. Nur der Projektpfad wird an den Engine-Prozess übergeben. Fachliche Werte
       werden ausschließlich in Projektdateien gespeichert und von der Engine selbst gelesen.</p>
-    <button type="button" onclick={loadExistingResources} disabled={resourcesBusy || !project.trim()}>
+    <button type="button" onclick={loadExistingResources} disabled={resourcesBusy}>
       {resourcesBusy ? 'Ressourcen werden geladen …' : 'Projektressourcen laden'}
     </button>
+    <p class="note" role="status" aria-live="polite">
+      Diagnose (PR #9): {resourceClickStatus || 'Noch kein Klick registriert.'}
+    </p>
     {#if busy || setupBusy || pipelineBusy || verificationBusy}
       <p class="note" role="status">Während einer anderen Engine-Aktion ist das Laden von Projektressourcen nicht möglich.</p>
     {/if}
