@@ -715,6 +715,42 @@ mod tests {
     }
 
     #[test]
+    fn lists_immutable_existing_imports_without_writing_project() {
+        use super::project_imported_resources;
+        let dir = std::env::temp_dir().join(format!(
+            "fairmorph-import-reader-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        let sha = "a".repeat(64);
+        let id = format!("counts-{sha}");
+        let imports = dir.join("imports").join(&id);
+        std::fs::create_dir_all(&imports).unwrap();
+        let object = dir.join("objects/sha256/aa").join(&sha);
+        std::fs::create_dir_all(object.parent().unwrap()).unwrap();
+        std::fs::write(&object, b"species,total_count\\nSeal,0\\n").unwrap();
+        let manifest = json!({
+            "schema_version": "fairmorph.poc.import/1",
+            "import_id": id,
+            "role": "counts",
+            "original_name": "counts.csv",
+            "sha256": sha,
+            "object_path": format!("objects/sha256/aa/{sha}")
+        });
+        let path = imports.join("manifest.json");
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let result = project_imported_resources(&dir).unwrap();
+        assert_eq!(result["resources"][0]["resource_id"], format!("resource-{id}"));
+        assert_eq!(result["resources"][0]["original_name"], "counts.csv");
+        assert_eq!(result["resources"][0]["role"], "counts");
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        std::fs::write(&path, b"{}").unwrap();
+        assert!(project_imported_resources(&dir).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn existing_project_folder_requires_regular_project_descriptor() {
         use super::validate_project;
         let dir = std::env::temp_dir().join(format!(
