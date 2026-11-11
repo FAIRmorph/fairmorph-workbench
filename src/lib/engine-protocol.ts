@@ -98,3 +98,13 @@ export const SelectedPipeline = z.object({
   active_pipeline_sha256: z.string().regex(/^[0-9a-f]{64}$/)
 });
 export type PipelineTemplateInfo = z.infer<typeof PipelineTemplate>;
+
+/** Engine verify-project result; integrity verification is not scientific validation. */
+export const ProjectVerification = z.object({
+  project_path: z.string().min(1),
+  source_objects: z.number().int().nonnegative(),
+  completed_runs: z.number().int().nonnegative(),
+  exports: z.number().int().nonnegative(),
+  status: z.literal('verified')
+});
+export type ProjectVerificationResult = z.infer<typeof ProjectVerification>;
