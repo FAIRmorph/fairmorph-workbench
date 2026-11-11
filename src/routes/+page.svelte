@@ -373,7 +373,7 @@
   }
 
   async function startRun() {
-    if (!canRunSelectedPipeline || busy || setupBusy || pipelineBusy || !!stagedSha) return;
+    if (!canRunSelectedPipeline || busy || setupBusy || pipelineBusy || verificationBusy || !!stagedSha) return;
     busy = true;
     error = '';
     run = null;
@@ -546,7 +546,7 @@
 
   <section aria-labelledby="run-title">
     <h2 id="run-title">RUN/2 ausführen</h2>
-    <button disabled={!canRunSelectedPipeline || busy || setupBusy || pipelineBusy || !!stagedSha}
+    <button disabled={!canRunSelectedPipeline || busy || setupBusy || pipelineBusy || verificationBusy || !!stagedSha}
       onclick={startRun}>{busy ? 'Engine arbeitet …' : canRunSelectedPipeline ? 'Technischen RUN starten' : 'Pipeline auswählen, um RUN zu starten'}</button>
     {#if !canRunSelectedPipeline}
       <p class="note" role="status">Noch nicht RUN-bereit: Im aktuellen Projekt zuerst eine technische Pipeline-Vorlage auswählen, die Ressourcen zuordnen und die registrierte Pipeline aktivieren.</p>
