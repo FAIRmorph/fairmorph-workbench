@@ -5,8 +5,8 @@
   import { listen } from '@tauri-apps/api/event';
   import {
     ApprovedDatasetMetadata, DatasetMetadataStatus, HandshakeResult,
-    ProgressEvent, RunResult, StagedDatasetMetadata, CreatedProject, ImportedResource, PipelineTemplate, SavedPipelineDraft, RegisteredPipeline, SelectedPipeline,
-    type DatasetMetadata, type Progress, type RunSummary, type PipelineTemplateInfo
+    ProgressEvent, RunResult, StagedDatasetMetadata, CreatedProject, ImportedResource, PipelineTemplate, SavedPipelineDraft, RegisteredPipeline, SelectedPipeline, ProjectVerification,
+    type DatasetMetadata, type Progress, type RunSummary, type PipelineTemplateInfo, type ProjectVerificationResult
   } from '$lib/engine-protocol';
 
   let project = $state('');
@@ -37,6 +37,9 @@
   let information = $state('');
   let progress = $state<Progress | null>(null);
   let run = $state<RunSummary | null>(null);
+  let verification = $state<ProjectVerificationResult | null>(null);
+  let verificationError = $state('');
+  let verificationBusy = $state(false);
   let dataset = $state<DatasetMetadata | null>(null);
   let title = $state('');
   let confirmingUser = $state('');
@@ -45,6 +48,8 @@
   let currentProject = $state('');
 
   function invalidateEditor() {
+    verification = null;
+    verificationError = '';
     dataset = null;
     stagedSha = null;
     savedDraft = false;
@@ -350,11 +355,30 @@
     }
   }
 
+  async function verifyCurrentProject() {
+    const target = project.trim();
+    if (!target || busy || setupBusy || pipelineBusy || verificationBusy) return;
+    verificationBusy = true;
+    verification = null;
+    verificationError = '';
+    try {
+      const result = ProjectVerification.parse(await invoke('verify_project', { project: target }));
+      // Never display a result belonging to a project that the user has since changed.
+      if (project.trim() === target) verification = result;
+    } catch (e) {
+      if (project.trim() === target) verificationError = String(e);
+    } finally {
+      verificationBusy = false;
+    }
+  }
+
   async function startRun() {
     if (!canRunSelectedPipeline || busy || setupBusy || pipelineBusy || !!stagedSha) return;
     busy = true;
     error = '';
     run = null;
+    verification = null;
+    verificationError = '';
     progress = null;
     try {
       run = RunResult.parse(await invoke('run_project', { project: project.trim() }));
@@ -529,6 +553,20 @@
     {/if}
     <p class="note">Die Engine prüft die bereits ausgewählte Pipeline und fixiert die aktive
       bestätigte Datensatztitelrevision im neuen RUN-Snapshot. Unbestätigte Drafts bleiben unwirksam.</p>
+    <div>
+      <button disabled={!project.trim() || busy || setupBusy || pipelineBusy || verificationBusy}
+        onclick={verifyCurrentProject}>{verificationBusy ? 'Integrität wird geprüft …' : 'Projektintegrität prüfen'}</button>
+      <span class="note">Unabhängig vom RUN; prüft das aktuelle Projekt, ohne einen RUN zu starten.</span>
+    </div>
+    {#if verification && verification.project_path === project.trim()}
+      <div role="status" aria-label="Ergebnis der Projektintegritätsprüfung">
+        <p><strong>Integrität bestätigt:</strong> {verification.status}</p>
+        <p>Projekt: <code>{verification.project_path}</code></p>
+        <p>Quellobjekte: <strong>{verification.source_objects}</strong> · Abgeschlossene RUNs: <strong>{verification.completed_runs}</strong> · Exporte: <strong>{verification.exports}</strong></p>
+        <p class="note">Technische Integrität geprüft; keine Aussage über fachliche oder wissenschaftliche Validität.</p>
+      </div>
+    {/if}
+    {#if verificationError}<p role="alert" class="error">Integritätsprüfung fehlgeschlagen: {verificationError}</p>{/if}
     {#if progress}<p role="status">{progress.stage}: {progress.percentage}% — {progress.message}</p>{/if}
     {#if run}
       <div aria-live="polite">
