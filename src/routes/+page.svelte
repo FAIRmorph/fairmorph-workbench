@@ -31,10 +31,8 @@
   let pipelineError = $state('');
   let pipelineMessage = $state('');
   let bindingsComplete = $derived(pipelineBindingsComplete(pipelineTemplate?.inputs,
-    projectResources.map(resource => ({
-      path: resource.original_name, role: 'counts', imported: true,
-      checksum: resource.sha256, resourceId: resource.resource_id
-    })), pipelineBindings, pipelineFormats));
+    projectResources.map(resource => ({ imported: true, resourceId: resource.resource_id })),
+    pipelineBindings, pipelineFormats));
   let setupBusy = $state(false);
   let setupError = $state('');
   let setupReady = $derived(!!setupProject && setupFiles.some(file => file.imported));
@@ -202,7 +200,13 @@
           ? { ...item, imported: true, checksum: imported.sha256, resourceId: imported.resource_id }
           : item);
       }
-      await loadExistingResources();
+      if (project.trim() === setupProject) {
+        resourceProject = setupProject;
+        projectResources = setupFiles.filter(item => item.imported).map(item => ({
+          original_name: sourceFileName(item.path), role: item.role,
+          resource_id: item.resourceId, sha256: item.checksum
+        }));
+      }
       setupMessage = 'Dateien unverändert importiert. Das Projekt kann jetzt konfiguriert werden.';
     } catch (e) {
       setupError = String(e) + ' Erfolgreiche Importe bleiben registriert; fehlgeschlagene Dateien können erneut importiert werden.';
