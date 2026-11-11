@@ -79,7 +79,7 @@ fn execute(app: AppHandle, action: &str, project: Option<&Path>) -> Result<Value
     let mut cmd = engine_command(&app)?;
     match action {
         "handshake" => { cmd.arg("handshake"); }
-        "run-pipeline" | "show-dataset-metadata" | "stage-dataset-metadata" | "approve-dataset-metadata" => {
+        "run-pipeline" | "verify-project" | "show-dataset-metadata" | "stage-dataset-metadata" | "approve-dataset-metadata" => {
             let directory = project.ok_or("RUN requires a project")?;
             cmd.arg(action).arg("--project").arg(directory);
         }
@@ -396,6 +396,13 @@ pub async fn select_registered_pipeline(
 #[tauri::command]
 pub async fn engine_handshake(app: AppHandle) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || execute(app, "handshake", None))
+        .await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn verify_project(app: AppHandle, project: String) -> Result<Value, String> {
+    let project = validate_project(&project)?;
+    tauri::async_runtime::spawn_blocking(move || execute(app, "verify-project", Some(&project)))
         .await.map_err(|e| e.to_string())?
 }
 
