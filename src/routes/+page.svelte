@@ -119,9 +119,11 @@
       if (project.trim() === target) {
         projectResources = result.resources;
         resourceProject = target;
-        resourceClickStatus = 'Klick ' + resourceClickCount + ' erfolgreich beantwortet.';
-        resourcesMessage = result.resources.length
-          ? result.resources.length + ' importierte Ressource(n) geladen. Die technische Pipeline kann konfiguriert werden.'
+        const count = result.resources.length;
+        resourceClickStatus = 'Klick ' + resourceClickCount + ': Tauri erfolgreich; ' + count
+          + ' Importressource(n) gefunden; Projektpfad stimmt überein.';
+        resourcesMessage = count > 0
+          ? count + ' importierte Ressource(n) geladen. Die technische Pipeline kann konfiguriert werden.'
           : 'Das Projekt wurde gelesen, enthält aber noch keine importierten Ressourcen.';
       }
     } catch (e) {
@@ -567,14 +569,18 @@
     <button type="button" onclick={loadExistingResources} disabled={resourcesBusy}>
       {resourcesBusy ? 'Ressourcen werden geladen …' : 'Projektressourcen laden'}
     </button>
-    <p class="note" role="status" aria-live="polite">
-      Diagnose (PR #9): {resourceClickStatus || 'Noch kein Klick registriert.'}
-    </p>
+    <div role="status" aria-live="polite">
+      <p class="note">Diagnose (PR #9): {resourceClickStatus || 'Noch kein Klick registriert.'}</p>
+      <p class="note">Ressourcen im UI: <strong>{projectResources.length}</strong> ·
+        für aktuelles Projekt: <strong>{resourceProject === project.trim() && !!project.trim() ? 'ja' : 'nein'}</strong> ·
+        Pipeline-Editor: <strong>{canConfigurePipeline ? 'sichtbar' : 'ausgeblendet'}</strong></p>
+      {#if resourcesMessage}<p>{resourcesMessage}</p>{/if}
+      {#if resourcesError}<p role="alert" class="error">{resourcesError}</p>{/if}
+    </div>
     {#if busy || setupBusy || pipelineBusy || verificationBusy}
       <p class="note" role="status">Während einer anderen Engine-Aktion ist das Laden von Projektressourcen nicht möglich.</p>
     {/if}
-    {#if resourcesMessage}<p role="status">{resourcesMessage}</p>{/if}
-    {#if resourcesError}<p role="alert" class="error">{resourcesError}</p>{/if}
+
     {#if !resourcesMessage && !resourcesError}
       <p class="note">Nach der Projektauswahl werden importierte Ressourcen geladen. Bei manueller Pfadeingabe bitte „Projektressourcen laden“ wählen.</p>
     {/if}
