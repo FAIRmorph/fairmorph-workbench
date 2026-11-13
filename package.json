@@ -5,8 +5,8 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Offline-first desktop application for biodiversity data curation, EML 2.2.0 metadata editing, deterministic auditing, and Darwin Core / GeoPackage packaging orchestration.",
-  "shortDescription": "Offline-first desktop application for biodiversity data curation",
+  "description": "Local-first Svelte/Tauri desktop UI for FAIRmorph Engine project setup, technical pipelines, RUN verification, and dataset-title revisions (v0.13 proof of concept).",
+  "shortDescription": "Local-first desktop UI for FAIRmorph Engine",
   "author": {
     "name": "FAIRmorph Team",
     "email": "contact@fairmorph.org",
@@ -14,7 +14,7 @@
   },
   "license": "MIT",
   "homepage": "https://www.fairmorph.org",
-  "documentation": "https://github.com/fairmorph/fairmorph-workbench/blob/main/READMEx.md",
+  "documentation": "https://github.com/FAIRmorph/fairmorph-workbench/blob/main/docs/USER-GUIDE.md",
   "bugs": {
     "url": "https://github.com/fairmorph/fairmorph-workbench/issues"
   },
