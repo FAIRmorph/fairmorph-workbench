@@ -39,7 +39,8 @@ jobs:
         with:
           repository: fairmorph/fairmorph-engine
           path: fairmorph-engine
-          ref: main
+          # Pinned Engine revision from the verified v0.1.0 release build.
+          ref: a534d8c8e573b188e8a359c297a31f03f7bcc46a
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -150,15 +151,43 @@ jobs:
         with:
           path: release-assets
 
+      # upload-artifact preserves paths relative to the common bundle directory
+      # (e.g. linux-packages/deb/*.deb). Flatten only the four expected release files.
+      - name: Verify and stage release packages
+        if: github.event_name == 'release'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets/publish
+          for spec in \
+            'linux-packages|*.deb' \
+            'linux-packages|*.AppImage' \
+            'windows-packages|*.exe' \
+            'windows-packages|*.zip'; do
+            source_dir="release-assets/${spec%%|*}"
+            pattern="${spec#*|}"
+            if [ ! -d "$source_dir" ]; then
+              echo "::error::Missing artifact directory: $source_dir"
+              exit 1
+            fi
+            mapfile -d '' matches < <(find "$source_dir" -type f -name "$pattern" -print0)
+            if [ "${#matches[@]}" -ne 1 ]; then
+              echo "::error::Expected exactly one $pattern in $source_dir, found ${#matches[@]}"
+              exit 1
+            fi
+            cp -- "${matches[0]}" release-assets/publish/
+          done
+          ls -lh release-assets/publish/
+
       - name: Upload Assets to Existing GitHub Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          fail_on_unmatched_files: true
           files: |
-            release-assets/linux-packages/*
-            release-assets/windows-packages/*
+            release-assets/publish/*
 
   trigger-documentation:
     name: Trigger Documentation Rebuild
