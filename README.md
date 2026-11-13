@@ -6,6 +6,8 @@
 
 **Maturity:** Technical **proof of concept**; package version `0.1.0`. This is **not** a complete scientific curation application or publication client. The [FAIRmorph Engine](https://github.com/FAIRmorph/fairmorph-engine) owns data contracts, source object storage, reviewed decisions, pipeline execution, RUN/2 snapshots and verification. The Workbench is a user interface; it does **not** reinterpret scientific values or infer mappings from file names.
 
+**Built on open-source infrastructure.** Svelte and Tauri provide the desktop application; the separate Polars-based Engine owns transformations, reviewed scientific definitions and verifiable RUN/audit evidence. FAIRmorph builds the **scientific curation layer**, not a proprietary replacement for these tools. Frictionless-based Data Package descriptions and technical validation are planned; repository-specific publishing remains separate future work. [FOSS architecture and development plan](https://www.fairmorph.org/guide/prototype-fund/).
+
 ## What currently works
 
 | User task | Workbench behavior | Limit |
