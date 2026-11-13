@@ -1,12 +1,12 @@
 # FAIRmorph Workbench
 
-> **Prototype Fund application proof of concept — not funded software.** FAIRmorph was developed solely to prepare an application to Germany’s [Prototype Fund](https://prototypefund.de/); no funding award, selection or official endorsement is claimed. The current Workbench is a technical prototype, not a finished no-code research-data product. [Evidence and six-month development plan](https://www.fairmorph.org/guide/prototype-fund/).
+> **Prototype Fund application — [read FAIRmorph’s concrete application, PoC results and six-month development plan](https://www.fairmorph.org/guide/prototype-fund/) (German).** This Workbench is the desktop proof of concept, not a finished no-code scientific application. It was developed solely to prepare an application; no grant, selection or official endorsement is claimed. [Detailed technical evidence](https://www.fairmorph.org/guide/prototype-fund-technical/).
 
 **A local-first desktop user interface for FAIRmorph Engine.** Workbench is built with **Svelte 5 and Tauri 2/Rust**. It lets users initialize or open a FAIRmorph project, import unchanged data files, configure and execute a **technical** Engine pipeline, inspect RUN results and verify project integrity, and create/review a dataset-title revision.
 
 **Maturity:** Technical **proof of concept**; package version `0.1.0`. This is **not** a complete scientific curation application or publication client. The [FAIRmorph Engine](https://github.com/FAIRmorph/fairmorph-engine) owns data contracts, source object storage, reviewed decisions, pipeline execution, RUN/2 snapshots and verification. The Workbench is a user interface; it does **not** reinterpret scientific values or infer mappings from file names.
 
-**Built on open-source infrastructure.** Svelte and Tauri provide the desktop application; the separate Polars-based Engine owns transformations, reviewed scientific definitions and verifiable RUN/audit evidence. FAIRmorph builds the **scientific curation layer**, not a proprietary replacement for these tools. Frictionless-based Data Package descriptions and technical validation are planned; repository-specific publishing remains separate future work. [FOSS architecture and development plan](https://www.fairmorph.org/guide/prototype-fund/).
+**Built on open-source infrastructure.** Svelte and Tauri provide the desktop application; the separate Polars-based Engine owns transformations, reviewed scientific definitions and verifiable RUN/audit evidence. FAIRmorph builds the **scientific curation layer**, not a proprietary replacement for these tools. Frictionless-based Data Package descriptions and technical validation are planned; repository-specific publishing remains separate future work. [FOSS architecture and detailed technical development plan](https://www.fairmorph.org/guide/prototype-fund-technical/).
 
 ## What currently works
 
@@ -39,7 +39,7 @@ pnpm test:rust
 pnpm tauri dev
 ```
 
-For development, the launcher looks for a sibling `fairmorph-engine/.venv` or an explicitly set `FAIRMORPH_ENGINE_PYTHON` interpreter that can import `fairmorph_engine.cli`. A production/release build instead expects a packaged Engine executable in its Tauri `engine/` resources; the published installer and exact Engine version-pinning are **not** established by these commands.
+For development, the launcher looks for a sibling `fairmorph-engine/.venv` or an explicitly set `FAIRMORPH_ENGINE_PYTHON` interpreter that can import `fairmorph_engine.cli`. A release build instead bundles a pinned Engine executable in Tauri’s `engine/` resources. The [v0.1.1 pre-release](https://github.com/FAIRmorph/fairmorph-workbench/releases/tag/v0.1.1) contains automatic Windows/Linux package uploads and tested Engine bundling. Linux packages and portable Windows startup have been manually checked; a [brief Windows console flash](https://github.com/FAIRmorph/fairmorph-workbench/issues/17) remains a known UX issue. These development commands do not independently prove a complete graphical end-to-end workflow.
 
 ## A reproducible example
 
