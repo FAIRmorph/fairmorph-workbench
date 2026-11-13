@@ -1,8 +1,10 @@
 # FAIRmorph Workbench
 
+> **Prototype Fund (Germany) · Proof of concept — not production software.** FAIRmorph is an experimental open-source prototype for Germany’s [Prototype Fund](https://prototypefund.de/). The current Workbench requires development tools and a compatible local Engine; a simple end-user installation and full no-code scientific publishing workflow are not available yet.
+
 **A local-first desktop user interface for FAIRmorph Engine.** Workbench is built with **Svelte 5 and Tauri 2/Rust**. It lets users initialize or open a FAIRmorph project, import unchanged data files, configure and execute a **technical** Engine pipeline, inspect RUN results and verify project integrity, and create/review a dataset-title revision.
 
-**Maturity:** Framework v0.13 **vertical proof of concept**; package version `0.1.0`. This is **not** a complete scientific curation application or publication client. The [FAIRmorph Engine](https://github.com/FAIRmorph/fairmorph-engine) owns data contracts, source object storage, reviewed decisions, pipeline execution, RUN/2 snapshots and verification. The Workbench is a user interface; it does **not** reinterpret scientific values or infer mappings from file names.
+**Maturity:** Technical **proof of concept**; package version `0.1.0`. This is **not** a complete scientific curation application or publication client. The [FAIRmorph Engine](https://github.com/FAIRmorph/fairmorph-engine) owns data contracts, source object storage, reviewed decisions, pipeline execution, RUN/2 snapshots and verification. The Workbench is a user interface; it does **not** reinterpret scientific values or infer mappings from file names.
 
 ## What currently works
 
@@ -19,7 +21,7 @@ The Workbench does **not** yet provide SourceFieldDefinition interviews, semanti
 
 ## Try the Workbench locally
 
-Requirements: **Node.js 22+**, **pnpm**, **Rust/Cargo**, Tauri 2 platform dependencies, and **Python 3.11+** with the compatible Engine installed. Begin with [installation and environment setup](docs/USER-GUIDE.md#1-install-and-start).
+Requirements: **Node.js 22+**, **pnpm**, **Rust/Cargo**, Tauri 2 platform dependencies, and **Python 3.11+** with the compatible Engine installed. Begin with [installation and environment setup](INSTALL.md), then follow the [user guide](docs/USER-GUIDE.md#1-install-and-start).
 
 ```bash
 # In a separate checkout of FAIRmorph Engine:
@@ -63,6 +65,7 @@ In the Workbench choose **New Project**, select a parent directory and a new pro
 
 ## Documentation
 
+- **[Installation](INSTALL.md)** — prerequisites, local Engine setup and development launch.
 - **[Workbench user guide](docs/USER-GUIDE.md)** — install, screen-by-screen example, configuration, expected results and troubleshooting.
 - **[Architecture and boundaries](docs/ARCHITECTURE.md)** — UI versus Engine responsibilities, project files, explicit decisions, test coverage and limits.
 - **[Engine usage and contracts](https://github.com/FAIRmorph/fairmorph-engine/blob/main/README.md)** — CLI, review/approval, RUN/2 and data contract details.
