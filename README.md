@@ -1,44 +1,85 @@
 # FAIRmorph Workbench
 
-Local-first desktop user interface for the **FAIRmorph Engine**.
+**A local-first desktop user interface for FAIRmorph Engine.** Workbench is built with **Svelte 5 and Tauri 2/Rust**. It lets users initialize or open a FAIRmorph project, import unchanged data files, configure and execute a **technical** Engine pipeline, inspect RUN results and verify project integrity, and create/review a dataset-title revision.
 
-**Status (framework v0.13):** early **vertical Proof of Concept**, not a released product or a scientifically validated publication workflow. The Engine owns the normative data contracts, decisions, verification, RUN/2 artifacts and exports.
+**Maturity:** Framework v0.13 **vertical proof of concept**; package version `0.1.0`. This is **not** a complete scientific curation application or publication client. The [FAIRmorph Engine](https://github.com/FAIRmorph/fairmorph-engine) owns data contracts, source object storage, reviewed decisions, pipeline execution, RUN/2 snapshots and verification. The Workbench is a user interface; it does **not** reinterpret scientific values or infer mappings from file names.
 
-## Current vertical integration
+## What currently works
 
-- Tauri v2/Rust starts the local Engine only through allowlisted commands: `handshake`, `init-project`, `import-resource`, `run-pipeline` and dataset-metadata actions.
-- Svelte displays progress and the Engine's result (`run_id`, output table names, row counts, columns).
-- The Workbench passes **no scientific configuration values** as CLI arguments or direct compiler parameters. The Engine reads the chosen project and its already approved, SHA-256-pinned configuration.
-- No approval is implied by editing a field. The current UI edits only the project-local dataset-title draft and a separate explicit approval decision file. Engine validation, revision registration and the current revision pointer remain Engine-owned.
+| User task | Workbench behavior | Limit |
+| --- | --- | --- |
+| Connect to Engine | Local process handshake and connection status | A compatible, separately installed Engine is needed for development |
+| New or existing project | Create an Engine project in a new local folder, or open one with `project.json` | Existing directories are not overwritten |
+| Import original data | Select files and assign an **explicit** technical role (`events` or `counts`); display imported source identity/hash | The role names are presently limited; **not** scientific Entity classification |
+| Technical pipeline | Select an existing `fairmorph.pipeline/1` JSON template, bind each declared input to an imported resource, save the project-local draft, register and select it via Engine | No creation of scientific field mappings or arbitrary pipeline editor |
+| Run and verify | Execute a separately selected technical pipeline, inspect returned RUN ID and table summaries, verify project integrity | The UI does not automatically execute a RUN after import or selection |
+| Dataset title | Load the current title, edit a draft, register an immutable revision, and separately confirm approval with a responsible user identity | Title approval is **not** approval of field semantics or a scientific publication |
 
-The retired benchmark `run_poc` / `PoCRunner` is not part of the Workbench integration.
+The Workbench does **not** yet provide SourceFieldDefinition interviews, semantic mapping previews, structured scientific findings, complete Entity-profile workflows, generalized EML/DwC-A/PANGAEA/GeoJSON publication, or scientific approval of CS-PHOC. **No AI or LLM integration is required.**
 
-## Development
+## Try the Workbench locally
 
-Requirements: Node.js, pnpm, Rust/Cargo with Tauri v2 platform prerequisites, and a compatible local FAIRmorph Engine checkout.
+Requirements: **Node.js 22+**, **pnpm**, **Rust/Cargo**, Tauri 2 platform dependencies, and **Python 3.11+** with the compatible Engine installed. Begin with [installation and environment setup](docs/USER-GUIDE.md#1-install-and-start).
 
-```sh
-pnpm install
+```bash
+# In a separate checkout of FAIRmorph Engine:
+python -m venv .venv
+# Activate the environment, then:
+python -m pip install -e .
+
+# In the Workbench repository:
+pnpm install --frozen-lockfile
 pnpm check
 pnpm test:frontend
-cargo test --manifest-path src-tauri/Cargo.toml
+pnpm test:rust
 pnpm tauri dev
 ```
 
-For development the Rust launcher finds a sibling `fairmorph-engine/.venv` or uses `FAIRMORPH_ENGINE_PYTHON`. The Python interpreter must have the current Engine installed. Release builds expect a packaged executable in the Tauri `engine/` resource folder; release bundling and commit pinning remain open work.
+For development, the launcher looks for a sibling `fairmorph-engine/.venv` or an explicitly set `FAIRMORPH_ENGINE_PYTHON` interpreter that can import `fairmorph_engine.cli`. A production/release build instead expects a packaged Engine executable in its Tauri `engine/` resources; the published installer and exact Engine version-pinning are **not** established by these commands.
 
-The **New Project** Svelte setup section now creates an Engine-owned project directory and imports original files with an explicit user-selected technical role (`events` or `counts`). A scientific mapping, pipeline registration and approval are **not** inferred from imported data. To execute a RUN, separately register/select the applicable pipeline and complete scientific confirmation when required. See [Project setup MVP](docs/POC-PROJECT-SETUP.md).
+## A reproducible example
 
-## Architecture and limits
+Create two simple CSVs **outside** the project folder.
 
-The user interface now **edits one project-local dataset-title draft**, not scientific CLI arguments. Engine commands stage it as a new content-addressed immutable revision and approve it only after an explicit, separate confirmation action. Existing content-addressed pipeline files, source bytes and completed RUNs must never be overwritten. The current Engine stores certain approvals/revision histories in SQLite, so directly modifying JSON files is **not** sufficient to register approved changes.
+**`events.csv`**
 
-A single UI text input flowing straight into an EML compiler would violate this boundary. EML publication from a RUN-bound, approved metadata revision needs a separate target-specific export contract (P0.7).
+```csv
+id,date
+1,2026-01-01
+2,2026-01-02
+```
 
-Besides the setup MVP, the current milestone provides only the dataset-title revision editor; it does **not** provide field-semantic cards, mapping preview, findings, generalized publication or CS-PHOC scientific regression. Those remain P0.6–P0.8 follow-up work.
+**`counts.csv`**
 
-See [P0.6 Workbench vertical checkpoint](docs/P0.6-WORKBENCH-VERTICAL.md) and the Engine's [v0.13 binding scope](https://github.com/FAIRmorph/fairmorph-engine/blob/main/docs/FRAMEWORK-v0.13-POC-SCOPE.md).
+```csv
+id,count
+1,0
+2,4
+```
 
-License: MIT.
+In the Workbench choose **New Project**, select a parent directory and a new project folder; import these two files with explicit roles `events` and `counts`. Choose a **technical** pipeline JSON template, bind its `events` input to the imported events file, and register/select it. A template using `table.select/1` and `outputs: ["selected_events"]` is provided in the [user guide](docs/USER-GUIDE.md#3-configure-a-technical-pipeline). Then explicitly start the RUN and verify the project.
 
-The dataset metadata draft and approval file format is specified in the [Engine P0.6 checkpoint](https://github.com/FAIRmorph/fairmorph-engine/blob/feature/p06-dataset-metadata-revisions/docs/P0.6-DATASET-METADATA-CHECKPOINT.md). Both feature branches must be tested together before merging.
+**Expected outcome:** Two imported resources with Engine-computed SHA-256 digests; a selected immutable pipeline hash; **one** technical RUN with an output table `selected_events` containing **two rows**; and successful integrity verification. The source CSV files remain untouched. This is **technical processing**, not an ecological interpretation or publication.
+
+## Documentation
+
+- **[Workbench user guide](docs/USER-GUIDE.md)** — install, screen-by-screen example, configuration, expected results and troubleshooting.
+- **[Architecture and boundaries](docs/ARCHITECTURE.md)** — UI versus Engine responsibilities, project files, explicit decisions, test coverage and limits.
+- **[Engine usage and contracts](https://github.com/FAIRmorph/fairmorph-engine/blob/main/README.md)** — CLI, review/approval, RUN/2 and data contract details.
+- **[Independent real-data validation](https://github.com/FAIRmorph/fairmorph-validations/blob/main/docs/CS-PHOC-REPRODUCTION-AND-RESULTS.md)** — evidence from original CS-PHOC data. **This is Engine and dataset-specific validation code, not an automated Workbench UI test.**
+
+## Quality checks
+
+```bash
+pnpm check
+pnpm test:frontend
+pnpm test:rust
+# With a compatible Engine installed and FAIRMORPH_ENGINE_PYTHON set:
+node scripts/test-project-setup.mjs
+```
+
+The project-setup integration test uses **synthetic CSVs** and verifies that Engine import, pipeline registration/selection and project integrity work without changing the source or silently running a pipeline. Rust and frontend tests exercise the bridge and UI rules, but **native dialogs and the full Tauri window still need manual end-to-end review on the target OS**.
+
+**Current UI language:** Some labels and feedback are currently German. These English documentation pages describe the existing controls; they do not claim UI localization has been implemented.
+
+License: [MIT](LICENSE).
