@@ -89,6 +89,15 @@ fn execute(app: AppHandle, action: &str, project: Option<&Path>) -> Result<Value
 }
 
 fn execute_command(app: AppHandle, mut cmd: Command) -> Result<Value, String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // The bundled PyInstaller Engine is a console program. Keep its piped
+        // NDJSON/stdout and diagnostics/stderr, but don't show a console window
+        // when the Windows GUI launches it (also applies to development Python).
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| format!("Cannot start Engine: {e}"))?;
     let stdout = child.stdout.take().ok_or("Missing Engine stdout")?;
