@@ -39,11 +39,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "publisher": "FAIRmorph Team",
+    "publisher": "FAIRmorph Team <contact@fairmorph.org>",
     "copyright": "Copyright © 2026 FAIRmorph Team",
     "license": "MIT",
-    "shortDescription": "Offline-first desktop application for biodiversity data curation",
-    "longDescription": "Offline-first desktop application for biodiversity data curation, EML 2.2.0 metadata editing, deterministic auditing, and Darwin Core / GeoPackage packaging orchestration.",
+    "shortDescription": "Local-first desktop UI for FAIRmorph Engine",
+    "longDescription": "Local-first Svelte/Tauri proof-of-concept desktop interface for FAIRmorph Engine projects, source imports, technical pipelines, RUN verification and dataset-title review.",
     "category": "Productivity",
     "homepage": "https://www.fairmorph.org"
   }

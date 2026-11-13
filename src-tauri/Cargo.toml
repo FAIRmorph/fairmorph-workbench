@@ -2,7 +2,7 @@
 name = "fairmorph-workbench"
 version = "0.1.0"
 publish = false
-description = "Local-first Svelte/Tauri desktop UI for FAIRmorph Engine project setup, technical pipelines, RUN verification, and dataset-title revisions (v0.13 proof of concept)."
+description = "Local-first Svelte/Tauri proof-of-concept desktop interface for FAIRmorph Engine projects, source imports, technical pipelines, RUN verification and dataset-title review."
 authors = ["FAIRmorph Team"]
 edition = "2021"
 license = "MIT"
@@ -16,7 +16,7 @@ categories = [
     "gui",
     "parsing",
 ]
-keywords = ["biodiversity-data","data-curation","darwin-core","eml-metadata","geopackage","fair-data"]
+keywords = ["research-data","data-curation","local-first","desktop-workbench","tauri","reproducible-workflows"]
 
 [lib]
 name = "fairmorph_workbench_lib"

@@ -4,7 +4,7 @@
   "identifier": "org.fairmorph.workbench",
   "name": "FAIRmorph Workbench",
   "version": "0.1.0",
-  "description": "Offline-first desktop application for biodiversity data curation, EML 2.2.0 metadata editing, deterministic auditing, and Darwin Core / GeoPackage packaging orchestration.",
+  "description": "Local-first Svelte/Tauri proof-of-concept desktop interface for FAIRmorph Engine projects, source imports, technical pipelines, RUN verification and dataset-title review.",
   "private": true,
   "license": "https://spdx.org/licenses/MIT",
   "codeRepository": "https://github.com/fairmorph/fairmorph-workbench",
@@ -29,18 +29,17 @@
   ],
   "operatingSystem": [
     "Linux",
-    "Windows",
-    "macOS"
+    "Windows"
   ],
-  "applicationCategory": "Bio-Informatics, GIS, Scientific Curation Tool",
+  "applicationCategory": "Research Data Curation, Desktop Prototype",
   "keywords": [
-    "biodiversity-data",
+    "research-data",
     "data-curation",
-    "darwin-core",
-    "eml-metadata",
-    "geopackage",
-    "fair-data"
+    "local-first",
+    "desktop-workbench",
+    "tauri",
+    "reproducible-workflows"
   ],
-  "dateModified": "2026-11-03",
-  "documentation": "https://github.com/fairmorph/fairmorph-workbench/blob/main/READMEx.md"
+  "dateModified": "2026-11-13",
+  "documentation": "https://github.com/FAIRmorph/fairmorph-workbench/blob/main/docs/USER-GUIDE.md"
 }
