@@ -39,17 +39,19 @@ For development, the launcher looks for a sibling `fairmorph-engine/.venv` or an
 
 ## A reproducible example
 
-Create two simple CSVs **outside** the project folder:
+Create two simple CSVs **outside** the project folder.
+
+**`events.csv`**
 
 ```csv
-# events.csv (the first line below is the header, not a comment)
 id,date
 1,2026-01-01
 2,2026-01-02
 ```
 
+**`counts.csv`**
+
 ```csv
-# counts.csv
 id,count
 1,0
 2,4
