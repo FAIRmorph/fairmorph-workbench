@@ -25,9 +25,12 @@ python -m pip install -e .
 python -m fairmorph_engine.cli handshake
 ```
 
-Then run the Workbench from its own repository:
+Open a **separate sibling checkout** of Workbench and run its development server:
 
 ```bash
+cd ..
+git clone https://github.com/FAIRmorph/fairmorph-workbench.git
+cd fairmorph-workbench
 pnpm install --frozen-lockfile
 pnpm check
 pnpm tauri dev
