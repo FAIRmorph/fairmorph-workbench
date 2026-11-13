@@ -51,7 +51,7 @@ The current interface uses a **bounded set of Engine commands**: `handshake`, `i
 - Frontend: Svelte 5/SvelteKit, state and protocol validation using TypeScript and Zod.
 - Desktop: Tauri 2/Rust, native file/folder dialog plugin, explicitly registered `tauri::command` handlers and controlled Engine process execution.
 - Development transport: Python `-m fairmorph_engine.cli` launched from `FAIRMORPH_ENGINE_PYTHON` (or a sibling `fairmorph-engine/.venv`). The Engine must actually be importable by that interpreter.
-- Release transport: expected prepackaged executable at Tauri resource `engine/fairmorph-engine` (Windows: `engine/fairmorph-engine.exe`). Its presence is a packaging prerequisite; an end-user installer/release with compatible pinned Engine is **not** demonstrated merely by development CI.
+- Release transport: expected prepackaged executable at Tauri resource `engine/fairmorph-engine` (Windows: `engine/fairmorph-engine.exe`). The Engine remains a console-capable CLI executable, but the Workbench's Windows Rust launcher suppresses the child console window while retaining piped stdout/stderr for JSON protocol and diagnostics. Its presence is a packaging prerequisite; successful packaged installation and interactive UI workflows must still be checked on target systems.
 - Engine protocol: JSON-line progress and one result event; the UI validates the result and displays RUN ID, table names, row counts and columns when present.
 
 These restrictions are important: Workbench provides user interaction, while the **Engine owns scientific decisions, immutable revisions and RUN evidence**. A single input field directly passed to an EML compiler would bypass those boundaries and is not supported.
