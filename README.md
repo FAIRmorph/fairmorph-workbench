@@ -1,6 +1,6 @@
 # FAIRmorph Workbench
 
-> **Prototype Fund (Germany) · Proof of concept — not production software.** FAIRmorph is an experimental open-source prototype for Germany’s [Prototype Fund](https://prototypefund.de/). The current Workbench requires development tools and a compatible local Engine; a simple end-user installation and full no-code scientific publishing workflow are not available yet.
+> **Prototype Fund application proof of concept — not funded software.** FAIRmorph was developed solely to prepare an application to Germany’s [Prototype Fund](https://prototypefund.de/); no funding award, selection or official endorsement is claimed. The current Workbench is a technical prototype, not a finished no-code research-data product. [Evidence and six-month development plan](https://www.fairmorph.org/guide/prototype-fund/).
 
 **A local-first desktop user interface for FAIRmorph Engine.** Workbench is built with **Svelte 5 and Tauri 2/Rust**. It lets users initialize or open a FAIRmorph project, import unchanged data files, configure and execute a **technical** Engine pipeline, inspect RUN results and verify project integrity, and create/review a dataset-title revision.
 
